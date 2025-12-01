@@ -1,13 +1,21 @@
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Share2, FileText, Calendar, Tag, FileType, Trash2 } from 'lucide-react';
+import { 
+  ArrowLeft, Share2, FileText, Calendar, Tag, FileType, 
+  Pencil, Star, DollarSign, Hash 
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useApp } from '@/contexts/AppContext';
+import { FileEditSheet } from '@/components/FileEditSheet';
+import { tagConfigs, DocumentTag } from '@/utils/autoTag';
 import { toast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 
 export default function FilePreview() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { files, removeFile } = useApp();
+  const { files, removeFile, addTimelineEvent } = useApp();
+  const [showEditSheet, setShowEditSheet] = useState(false);
 
   const file = files.find(f => f.id === id);
 
@@ -43,6 +51,12 @@ export default function FilePreview() {
   };
 
   const handleDelete = () => {
+    addTimelineEvent({
+      type: 'file_delete',
+      title: 'File Deleted',
+      description: `Deleted "${file.name}"`,
+    });
+    
     removeFile(file.id);
     toast({
       title: "File deleted",
@@ -57,6 +71,15 @@ export default function FilePreview() {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const getFieldIcon = (type: string) => {
+    switch (type) {
+      case 'amount': return DollarSign;
+      case 'date': return Calendar;
+      case 'number': return Hash;
+      default: return Tag;
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background safe-area-top safe-area-bottom">
       {/* Header */}
@@ -69,7 +92,22 @@ export default function FilePreview() {
         >
           <ArrowLeft className="w-5 h-5" />
         </Button>
-        <h1 className="flex-1 font-semibold truncate">{file.name}</h1>
+        <div className="flex-1 min-w-0">
+          <h1 className="font-semibold truncate flex items-center gap-2">
+            {file.name}
+            {file.isImportant && (
+              <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
+            )}
+          </h1>
+        </div>
+        <Button
+          onClick={() => setShowEditSheet(true)}
+          variant="ghost"
+          size="iconSm"
+          className="rounded-full"
+        >
+          <Pencil className="w-5 h-5" />
+        </Button>
         <Button
           onClick={handleShare}
           variant="ghost"
@@ -93,6 +131,27 @@ export default function FilePreview() {
           </div>
         )}
 
+        {/* Tags */}
+        {file.tags.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {file.tags.map((tag) => {
+              const tagConfig = tagConfigs[tag as DocumentTag];
+              return (
+                <span
+                  key={tag}
+                  className={cn(
+                    "px-3 py-1.5 rounded-full text-sm font-medium",
+                    tagConfig?.bgColor,
+                    tagConfig?.color
+                  )}
+                >
+                  {tagConfig?.label || tag}
+                </span>
+              );
+            })}
+          </div>
+        )}
+
         {/* Metadata */}
         <div className="card-elevated p-4 space-y-4">
           <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
@@ -105,18 +164,8 @@ export default function FilePreview() {
                 <Calendar className="w-5 h-5 text-primary" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Date</p>
+                <p className="text-sm text-muted-foreground">Date Added</p>
                 <p className="font-medium">{file.metadata.date}</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                <Tag className="w-5 h-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Title</p>
-                <p className="font-medium">{file.metadata.title}</p>
               </div>
             </div>
 
@@ -132,6 +181,44 @@ export default function FilePreview() {
           </div>
         </div>
 
+        {/* Extracted Fields */}
+        {file.extractedFields.length > 0 && (
+          <div className="card-elevated p-4 space-y-4">
+            <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
+              Extracted Information
+            </h3>
+            
+            <div className="space-y-3">
+              {file.extractedFields.map((field, index) => {
+                const Icon = getFieldIcon(field.type);
+                return (
+                  <div key={index} className="flex items-center gap-3">
+                    <div className={cn(
+                      "w-10 h-10 rounded-xl flex items-center justify-center",
+                      field.type === 'amount' && "bg-green-100 dark:bg-green-900/30",
+                      field.type === 'date' && "bg-blue-100 dark:bg-blue-900/30",
+                      field.type !== 'amount' && field.type !== 'date' && "bg-secondary"
+                    )}>
+                      <Icon className={cn(
+                        "w-5 h-5",
+                        field.type === 'amount' && "text-green-600",
+                        field.type === 'date' && "text-blue-600",
+                        field.type !== 'amount' && field.type !== 'date' && "text-muted-foreground"
+                      )} />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground capitalize">
+                        {field.key.replace(/_/g, ' ')}
+                      </p>
+                      <p className="font-medium">{field.value}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Extracted Text */}
         <div className="card-elevated p-4 space-y-3">
           <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
@@ -145,22 +232,19 @@ export default function FilePreview() {
         </div>
 
         {/* Actions */}
-        <div className="space-y-3">
-          <Button onClick={handleShare} size="lg" className="w-full gap-2">
-            <Share2 className="w-5 h-5" />
-            Open / Share
-          </Button>
-          <Button
-            onClick={handleDelete}
-            variant="destructive"
-            size="lg"
-            className="w-full gap-2"
-          >
-            <Trash2 className="w-5 h-5" />
-            Delete File
-          </Button>
-        </div>
+        <Button onClick={handleShare} size="lg" className="w-full gap-2">
+          <Share2 className="w-5 h-5" />
+          Open / Share
+        </Button>
       </div>
+
+      {/* Edit Sheet */}
+      <FileEditSheet
+        isOpen={showEditSheet}
+        file={file}
+        onClose={() => setShowEditSheet(false)}
+        onDelete={handleDelete}
+      />
     </div>
   );
 }

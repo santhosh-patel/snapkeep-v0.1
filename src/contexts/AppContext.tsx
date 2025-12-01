@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { DocumentTag } from '@/utils/autoTag';
 
 export type AIProvider = 'openai' | 'gemini' | 'groq';
 
@@ -11,7 +12,13 @@ interface AppSettings {
   isLocked: boolean;
 }
 
-interface StoredFile {
+export interface ExtractedField {
+  key: string;
+  value: string;
+  type: 'date' | 'amount' | 'text' | 'number';
+}
+
+export interface StoredFile {
   id: string;
   name: string;
   type: 'image' | 'screenshot' | 'pdf' | 'document' | 'other';
@@ -19,33 +26,66 @@ interface StoredFile {
   size: number;
   thumbnail?: string;
   extractedText: string;
+  tags: DocumentTag[];
+  isImportant: boolean;
+  extractedFields: ExtractedField[];
   metadata: {
     date: string;
     title: string;
     fileType: string;
   };
   createdAt: string;
+  updatedAt: string;
   uri?: string;
+}
+
+export interface Reminder {
+  id: string;
+  fileId: string;
+  fileName: string;
+  type: 'due_date' | 'renewal_date' | 'warranty_date' | 'expiry_date';
+  date: string;
+  description: string;
+  isCompleted: boolean;
+  createdAt: string;
+}
+
+export interface TimelineEvent {
+  id: string;
+  type: 'file_upload' | 'file_delete' | 'tag_added' | 'reminder_created' | 'question_asked' | 'settings_changed' | 'api_key_updated';
+  title: string;
+  description: string;
+  fileId?: string;
+  timestamp: string;
 }
 
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  references?: Array<{ fileId: string; fileName: string; snippet: string }>;
   timestamp: string;
 }
 
 interface AppContextType {
   settings: AppSettings;
   files: StoredFile[];
+  reminders: Reminder[];
+  timeline: TimelineEvent[];
   chatMessages: ChatMessage[];
   updateSettings: (updates: Partial<AppSettings>) => void;
   addFile: (file: StoredFile) => void;
+  updateFile: (id: string, updates: Partial<StoredFile>) => void;
   removeFile: (id: string) => void;
+  addReminder: (reminder: Reminder) => void;
+  updateReminder: (id: string, updates: Partial<Reminder>) => void;
+  removeReminder: (id: string) => void;
+  addTimelineEvent: (event: Omit<TimelineEvent, 'id' | 'timestamp'>) => void;
   addChatMessage: (message: Omit<ChatMessage, 'id' | 'timestamp'>) => void;
   clearChat: () => void;
   unlockApp: () => void;
   lockApp: () => void;
+  searchFiles: (query: string) => StoredFile[];
 }
 
 const defaultSettings: AppSettings = {
@@ -74,6 +114,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return stored ? JSON.parse(stored) : [];
   });
 
+  const [reminders, setReminders] = useState<Reminder[]>(() => {
+    const stored = localStorage.getItem('snapkeep_reminders');
+    return stored ? JSON.parse(stored) : [];
+  });
+
+  const [timeline, setTimeline] = useState<TimelineEvent[]>(() => {
+    const stored = localStorage.getItem('snapkeep_timeline');
+    return stored ? JSON.parse(stored) : [];
+  });
+
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => {
     const stored = localStorage.getItem('snapkeep_chat');
     return stored ? JSON.parse(stored) : [];
@@ -94,6 +144,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [files]);
 
   useEffect(() => {
+    localStorage.setItem('snapkeep_reminders', JSON.stringify(reminders));
+  }, [reminders]);
+
+  useEffect(() => {
+    localStorage.setItem('snapkeep_timeline', JSON.stringify(timeline));
+  }, [timeline]);
+
+  useEffect(() => {
     localStorage.setItem('snapkeep_chat', JSON.stringify(chatMessages));
   }, [chatMessages]);
 
@@ -105,8 +163,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setFiles(prev => [file, ...prev]);
   };
 
+  const updateFile = (id: string, updates: Partial<StoredFile>) => {
+    setFiles(prev => prev.map(f => 
+      f.id === id ? { ...f, ...updates, updatedAt: new Date().toISOString() } : f
+    ));
+  };
+
   const removeFile = (id: string) => {
     setFiles(prev => prev.filter(f => f.id !== id));
+    // Also remove associated reminders
+    setReminders(prev => prev.filter(r => r.fileId !== id));
+  };
+
+  const addReminder = (reminder: Reminder) => {
+    setReminders(prev => [reminder, ...prev]);
+  };
+
+  const updateReminder = (id: string, updates: Partial<Reminder>) => {
+    setReminders(prev => prev.map(r => 
+      r.id === id ? { ...r, ...updates } : r
+    ));
+  };
+
+  const removeReminder = (id: string) => {
+    setReminders(prev => prev.filter(r => r.id !== id));
+  };
+
+  const addTimelineEvent = (event: Omit<TimelineEvent, 'id' | 'timestamp'>) => {
+    const newEvent: TimelineEvent = {
+      ...event,
+      id: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+    };
+    setTimeline(prev => [newEvent, ...prev].slice(0, 100)); // Keep last 100 events
   };
 
   const addChatMessage = (message: Omit<ChatMessage, 'id' | 'timestamp'>) => {
@@ -132,19 +221,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const searchFiles = (query: string): StoredFile[] => {
+    if (!query.trim()) return files;
+    
+    const lowerQuery = query.toLowerCase();
+    return files.filter(file => 
+      file.name.toLowerCase().includes(lowerQuery) ||
+      file.extractedText.toLowerCase().includes(lowerQuery) ||
+      file.tags.some(tag => tag.toLowerCase().includes(lowerQuery)) ||
+      file.extractedFields.some(field => 
+        field.value.toLowerCase().includes(lowerQuery) ||
+        field.key.toLowerCase().includes(lowerQuery)
+      )
+    );
+  };
+
   return (
     <AppContext.Provider
       value={{
         settings,
         files,
+        reminders,
+        timeline,
         chatMessages,
         updateSettings,
         addFile,
+        updateFile,
         removeFile,
+        addReminder,
+        updateReminder,
+        removeReminder,
+        addTimelineEvent,
         addChatMessage,
         clearChat,
         unlockApp,
         lockApp,
+        searchFiles,
       }}
     >
       {children}

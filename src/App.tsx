@@ -9,6 +9,8 @@ import Onboarding from "./pages/Onboarding";
 import Browse from "./pages/Browse";
 import Chat from "./pages/Chat";
 import Settings from "./pages/Settings";
+import Reminders from "./pages/Reminders";
+import Timeline from "./pages/Timeline";
 import FilePreview from "./pages/FilePreview";
 import NotFound from "./pages/NotFound";
 
@@ -31,8 +33,10 @@ function AppRoutes() {
       <Route element={<MainLayout />}>
         <Route path="/browse" element={<Browse />} />
         <Route path="/chat" element={<Chat />} />
+        <Route path="/reminders" element={<Reminders />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
+      <Route path="/timeline" element={<Timeline />} />
       <Route path="/preview/:id" element={<FilePreview />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
