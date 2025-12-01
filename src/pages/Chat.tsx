@@ -1,12 +1,20 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Trash2, Loader2 } from 'lucide-react';
+import { Send, Bot, User, Trash2, Loader2, FileText, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useApp } from '@/contexts/AppContext';
+import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 
+interface Reference {
+  fileId: string;
+  fileName: string;
+  snippet: string;
+}
+
 export default function Chat() {
-  const { chatMessages, addChatMessage, clearChat, settings, files } = useApp();
+  const { chatMessages, addChatMessage, clearChat, addTimelineEvent, settings, files } = useApp();
+  const navigate = useNavigate();
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -20,35 +28,108 @@ export default function Chat() {
     scrollToBottom();
   }, [chatMessages]);
 
-  const generateAIResponse = async (userMessage: string): Promise<string> => {
-    // Simulate AI response with context from files
+  // Multi-document search
+  const searchDocuments = (query: string): Reference[] => {
+    const lowerQuery = query.toLowerCase();
+    const keywords = lowerQuery.split(/\s+/).filter(w => w.length > 2);
+    
+    const results: Reference[] = [];
+    
+    for (const file of files) {
+      const lowerText = file.extractedText.toLowerCase();
+      const relevanceScore = keywords.reduce((score, keyword) => {
+        if (lowerText.includes(keyword)) return score + 1;
+        if (file.name.toLowerCase().includes(keyword)) return score + 2;
+        if (file.tags.some(t => t.toLowerCase().includes(keyword))) return score + 1.5;
+        return score;
+      }, 0);
+
+      if (relevanceScore > 0) {
+        // Extract relevant snippet
+        let snippet = '';
+        for (const keyword of keywords) {
+          const index = lowerText.indexOf(keyword);
+          if (index !== -1) {
+            const start = Math.max(0, index - 50);
+            const end = Math.min(file.extractedText.length, index + keyword.length + 50);
+            snippet = '...' + file.extractedText.slice(start, end).trim() + '...';
+            break;
+          }
+        }
+
+        if (!snippet) {
+          snippet = file.extractedText.slice(0, 100) + '...';
+        }
+
+        results.push({
+          fileId: file.id,
+          fileName: file.name,
+          snippet,
+        });
+      }
+    }
+
+    return results.slice(0, 5); // Top 5 relevant documents
+  };
+
+  const generateAIResponse = async (userMessage: string): Promise<{ content: string; references: Reference[] }> => {
     await new Promise(resolve => setTimeout(resolve, 1500));
 
-    const fileContext = files
-      .slice(0, 5)
-      .map(f => `${f.name}: ${f.extractedText.slice(0, 100)}...`)
-      .join('\n');
-
-    // Simulate different responses based on keywords
+    const references = searchDocuments(userMessage);
     const lowerMessage = userMessage.toLowerCase();
 
-    if (lowerMessage.includes('invoice') || lowerMessage.includes('receipt')) {
-      return `Based on your documents, I found relevant financial records. You have files containing invoice and receipt information with various amounts and dates. Would you like me to summarize the total expenses?`;
+    // Generate contextual response based on found documents
+    if (references.length === 0) {
+      if (files.length === 0) {
+        return {
+          content: `I don't have any documents to search through yet. Try uploading some files first - I can help you find information across receipts, invoices, contracts, and other documents once they're in your collection.`,
+          references: [],
+        };
+      }
+      return {
+        content: `I searched through your ${files.length} documents but couldn't find anything matching "${userMessage}". Try being more specific or using different keywords. I can search through file names, tags, and extracted text.`,
+        references: [],
+      };
     }
 
-    if (lowerMessage.includes('meeting') || lowerMessage.includes('notes')) {
-      return `I can see you have meeting notes in your files. The documents contain action items and attendee information. Would you like me to extract the key action items?`;
+    // Build response based on query type and found documents
+    let response = '';
+
+    if (lowerMessage.includes('total') || lowerMessage.includes('spend') || lowerMessage.includes('amount') || lowerMessage.includes('how much')) {
+      const amounts = files.flatMap(f => f.extractedFields.filter(ef => ef.type === 'amount'));
+      if (amounts.length > 0) {
+        const total = amounts.reduce((sum, a) => {
+          const num = parseFloat(a.value.replace(/[$,]/g, ''));
+          return isNaN(num) ? sum : sum + num;
+        }, 0);
+        response = `Based on ${references.length} relevant documents, I found financial information. The total across these documents is approximately $${total.toFixed(2)}. Here are the specific documents I analyzed:`;
+      } else {
+        response = `I found ${references.length} documents that might be relevant to your query about amounts. Here's what I found:`;
+      }
+    } else if (lowerMessage.includes('due') || lowerMessage.includes('deadline') || lowerMessage.includes('expire') || lowerMessage.includes('when')) {
+      const dates = files.flatMap(f => f.extractedFields.filter(ef => ef.type === 'date'));
+      if (dates.length > 0) {
+        response = `I found ${dates.length} date-related entries across your documents. Here are the relevant files that contain date information:`;
+      } else {
+        response = `I found ${references.length} potentially relevant documents. Here's what I found:`;
+      }
+    } else if (lowerMessage.includes('receipt') || lowerMessage.includes('invoice') || lowerMessage.includes('bill')) {
+      const matchingFiles = files.filter(f => 
+        f.tags.some(t => ['receipt', 'invoice', 'bill'].includes(t))
+      );
+      response = `You have ${matchingFiles.length} documents tagged as receipts, invoices, or bills. Here are the most relevant ones based on your query:`;
+    } else if (lowerMessage.includes('warranty') || lowerMessage.includes('guarantee')) {
+      const warrantyFiles = files.filter(f => f.tags.includes('warranty'));
+      if (warrantyFiles.length > 0) {
+        response = `I found ${warrantyFiles.length} warranty documents. Here's the information I extracted:`;
+      } else {
+        response = `I searched for warranty information and found ${references.length} potentially relevant documents:`;
+      }
+    } else {
+      response = `I searched across all ${files.length} documents in your collection and found ${references.length} that match your query. Here's what I found:`;
     }
 
-    if (lowerMessage.includes('contract') || lowerMessage.includes('agreement')) {
-      return `I found contract-related documents in your collection. These contain important terms and dates. Would you like me to highlight the key dates and terms?`;
-    }
-
-    if (files.length > 0) {
-      return `I have access to ${files.length} documents in your collection. Based on the extracted text, I can help you search for specific information, summarize content, or answer questions about your files. What would you like to know?`;
-    }
-
-    return `I'm your AI assistant powered by ${settings.aiProvider}. I can help you search and analyze your documents. Currently, you don't have any files uploaded. Try uploading some documents first, then ask me questions about them!`;
+    return { content: response, references };
   };
 
   const handleSend = async () => {
@@ -58,11 +139,22 @@ export default function Chat() {
     setInput('');
     
     addChatMessage({ role: 'user', content: userMessage });
+    
+    addTimelineEvent({
+      type: 'question_asked',
+      title: 'Question Asked',
+      description: userMessage.slice(0, 50) + (userMessage.length > 50 ? '...' : ''),
+    });
+    
     setIsLoading(true);
 
     try {
-      const response = await generateAIResponse(userMessage);
-      addChatMessage({ role: 'assistant', content: response });
+      const { content, references } = await generateAIResponse(userMessage);
+      addChatMessage({
+        role: 'assistant',
+        content,
+        references: references.length > 0 ? references : undefined,
+      });
     } catch (error) {
       addChatMessage({
         role: 'assistant',
@@ -86,7 +178,9 @@ export default function Chat() {
       <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 flex items-center justify-between p-4 border-b border-border">
         <div>
           <h1 className="text-2xl font-bold">Chat</h1>
-          <p className="text-sm text-muted-foreground">Ask about your documents</p>
+          <p className="text-sm text-muted-foreground">
+            Ask questions across {files.length} documents
+          </p>
         </div>
         {chatMessages.length > 0 && (
           <Button
@@ -107,10 +201,26 @@ export default function Chat() {
             <div className="w-16 h-16 rounded-2xl upload-button-gradient flex items-center justify-center mb-4 shadow-glow">
               <Bot className="w-8 h-8 text-primary-foreground" />
             </div>
-            <h3 className="text-lg font-semibold mb-2">AI Assistant</h3>
-            <p className="text-muted-foreground text-sm max-w-xs">
-              Ask questions about your documents. I can search, summarize, and analyze your files.
+            <h3 className="text-lg font-semibold mb-2">Multi-Document Q&A</h3>
+            <p className="text-muted-foreground text-sm max-w-xs mb-6">
+              Ask any question and I'll search across all your documents to find answers.
             </p>
+            <div className="space-y-2 w-full max-w-xs">
+              <p className="text-xs text-muted-foreground">Try asking:</p>
+              {[
+                "How much did I spend on receipts?",
+                "When does my warranty expire?",
+                "Show me all my invoices",
+              ].map((suggestion) => (
+                <button
+                  key={suggestion}
+                  onClick={() => setInput(suggestion)}
+                  className="w-full text-left p-3 rounded-xl bg-secondary hover:bg-secondary/80 text-sm transition-colors"
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
           </div>
         ) : (
           chatMessages.map((message) => (
@@ -135,17 +245,48 @@ export default function Chat() {
                   <Bot className="w-4 h-4" />
                 )}
               </div>
-              <div
-                className={cn(
-                  "max-w-[80%] rounded-2xl px-4 py-3",
-                  message.role === 'user'
-                    ? "bg-primary text-primary-foreground rounded-tr-sm"
-                    : "bg-secondary text-secondary-foreground rounded-tl-sm"
+              <div className={cn(
+                "max-w-[85%] space-y-2",
+                message.role === 'user' ? "items-end" : "items-start"
+              )}>
+                <div
+                  className={cn(
+                    "rounded-2xl px-4 py-3",
+                    message.role === 'user'
+                      ? "bg-primary text-primary-foreground rounded-tr-sm"
+                      : "bg-secondary text-secondary-foreground rounded-tl-sm"
+                  )}
+                >
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                    {message.content}
+                  </p>
+                </div>
+                
+                {/* References */}
+                {message.references && message.references.length > 0 && (
+                  <div className="space-y-2 w-full">
+                    {message.references.map((ref, index) => (
+                      <button
+                        key={index}
+                        onClick={() => navigate(`/preview/${ref.fileId}`)}
+                        className="w-full text-left p-3 rounded-xl bg-card border border-border hover:bg-secondary/50 transition-colors"
+                      >
+                        <div className="flex items-start gap-2">
+                          <FileText className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate flex items-center gap-1">
+                              {ref.fileName}
+                              <ExternalLink className="w-3 h-3 text-muted-foreground" />
+                            </p>
+                            <p className="text-xs text-muted-foreground line-clamp-2">
+                              {ref.snippet}
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
                 )}
-              >
-                <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                  {message.content}
-                </p>
               </div>
             </div>
           ))
@@ -157,7 +298,10 @@ export default function Chat() {
               <Bot className="w-4 h-4 text-secondary-foreground" />
             </div>
             <div className="bg-secondary rounded-2xl rounded-tl-sm px-4 py-3">
-              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              <div className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">Searching documents...</span>
+              </div>
             </div>
           </div>
         )}
