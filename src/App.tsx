@@ -11,6 +11,7 @@ import Chat from "./pages/Chat";
 import Settings from "./pages/Settings";
 import Reminders from "./pages/Reminders";
 import Timeline from "./pages/Timeline";
+import Planner from "./pages/Planner";
 import FilePreview from "./pages/FilePreview";
 import NotFound from "./pages/NotFound";
 
@@ -33,6 +34,7 @@ function AppRoutes() {
       <Route element={<MainLayout />}>
         <Route path="/browse" element={<Browse />} />
         <Route path="/chat" element={<Chat />} />
+        <Route path="/planner" element={<Planner />} />
         <Route path="/reminders" element={<Reminders />} />
         <Route path="/settings" element={<Settings />} />
       </Route>

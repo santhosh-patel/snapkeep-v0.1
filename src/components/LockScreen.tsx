@@ -1,13 +1,12 @@
 import { Fingerprint, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useApp } from '@/contexts/AppContext';
+import logoImage from '@/assets/logo.png';
 
 export function LockScreen() {
   const { unlockApp } = useApp();
 
   const handleUnlock = () => {
-    // In a real app, this would trigger biometric authentication
-    // For demo purposes, we'll just unlock
     unlockApp();
   };
 
@@ -15,9 +14,11 @@ export function LockScreen() {
     <div className="fixed inset-0 bg-background z-[100] flex flex-col items-center justify-center p-6 safe-area-top safe-area-bottom">
       {/* Logo */}
       <div className="mb-8">
-        <div className="w-20 h-20 rounded-3xl upload-button-gradient flex items-center justify-center shadow-glow animate-float">
-          <ShieldCheck className="w-10 h-10 text-primary-foreground" />
-        </div>
+        <img 
+          src={logoImage} 
+          alt="SnapKeep" 
+          className="w-20 h-20 animate-float"
+        />
       </div>
 
       {/* App Name */}
