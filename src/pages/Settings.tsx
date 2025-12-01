@@ -1,5 +1,9 @@
 import { useState } from 'react';
-import { Bot, Key, Moon, Fingerprint, Info, CheckCircle2, Loader2, ChevronRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { 
+  Bot, Key, Moon, Sun, Fingerprint, Info, CheckCircle2, Loader2, 
+  ChevronRight, Eye, EyeOff, Clock, Shield, History, Wifi, WifiOff 
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -7,22 +11,37 @@ import { useApp, AIProvider } from '@/contexts/AppContext';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
-const providers: { id: AIProvider; name: string }[] = [
-  { id: 'openai', name: 'OpenAI' },
-  { id: 'gemini', name: 'Google Gemini' },
-  { id: 'groq', name: 'Groq' },
+const providers: { id: AIProvider; name: string; description: string }[] = [
+  { id: 'openai', name: 'OpenAI', description: 'GPT-4 powered' },
+  { id: 'gemini', name: 'Google Gemini', description: 'Multimodal AI' },
+  { id: 'groq', name: 'Groq', description: 'Ultra-fast inference' },
+];
+
+const autoLockOptions = [
+  { value: 0, label: 'Never' },
+  { value: 1, label: '1 minute' },
+  { value: 5, label: '5 minutes' },
+  { value: 15, label: '15 minutes' },
+  { value: 30, label: '30 minutes' },
 ];
 
 export default function Settings() {
-  const { settings, updateSettings } = useApp();
+  const navigate = useNavigate();
+  const { settings, updateSettings, isOnline, addTimelineEvent } = useApp();
   const [showApiKeyInput, setShowApiKeyInput] = useState(false);
   const [newApiKey, setNewApiKey] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
   const [showProviderPicker, setShowProviderPicker] = useState(false);
+  const [showAutoLockPicker, setShowAutoLockPicker] = useState(false);
 
   const handleProviderChange = (provider: AIProvider) => {
     updateSettings({ aiProvider: provider });
     setShowProviderPicker(false);
+    addTimelineEvent({
+      type: 'settings_changed',
+      title: 'AI Provider Changed',
+      description: `Switched to ${providers.find(p => p.id === provider)?.name}`,
+    });
     toast({
       title: "Provider updated",
       description: `Switched to ${providers.find(p => p.id === provider)?.name}`,
@@ -31,11 +50,7 @@ export default function Settings() {
 
   const handleVerifyNewKey = async () => {
     if (!newApiKey.trim()) {
-      toast({
-        title: "API Key Required",
-        description: "Please enter an API key.",
-        variant: "destructive",
-      });
+      toast({ title: "API Key Required", description: "Please enter an API key.", variant: "destructive" });
       return;
     }
 
@@ -44,34 +59,27 @@ export default function Settings() {
 
     if (newApiKey.length >= 10) {
       updateSettings({ apiKey: newApiKey });
+      addTimelineEvent({
+        type: 'api_key_updated',
+        title: 'API Key Updated',
+        description: 'Your API key has been updated',
+      });
       setNewApiKey('');
       setShowApiKeyInput(false);
-      toast({
-        title: "API Key updated",
-        description: "Your new API key has been verified and saved.",
-      });
+      toast({ title: "API Key updated", description: "Your new API key has been saved." });
     } else {
-      toast({
-        title: "Invalid API Key",
-        description: "Please check your API key and try again.",
-        variant: "destructive",
-      });
+      toast({ title: "Invalid API Key", description: "Please check your API key.", variant: "destructive" });
     }
 
     setIsVerifying(false);
   };
 
-  const handleDarkModeToggle = (enabled: boolean) => {
-    updateSettings({ darkMode: enabled });
-  };
-
-  const handlePrivacyLockToggle = (enabled: boolean) => {
-    updateSettings({ privacyLockEnabled: enabled });
+  const handleThemeToggle = () => {
+    const newDarkMode = !settings.darkMode;
+    updateSettings({ darkMode: newDarkMode });
     toast({
-      title: enabled ? "Privacy lock enabled" : "Privacy lock disabled",
-      description: enabled
-        ? "The app will now require authentication when opened."
-        : "The app will no longer require authentication.",
+      title: newDarkMode ? "Dark mode enabled" : "Light mode enabled",
+      description: `Switched to ${newDarkMode ? 'dark' : 'light'} theme`,
     });
   };
 
@@ -79,109 +87,111 @@ export default function Settings() {
     <div className="min-h-screen bg-background pb-24 safe-area-top">
       {/* Header */}
       <div className="p-4 border-b border-border">
-        <h1 className="text-2xl font-bold">Settings</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold">Settings</h1>
+          <div className="flex items-center gap-2 text-sm">
+            {isOnline ? (
+              <span className="flex items-center gap-1 text-green-600">
+                <Wifi className="w-4 h-4" />
+                Online
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-amber-600">
+                <WifiOff className="w-4 h-4" />
+                Offline
+              </span>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Content */}
       <div className="p-4 space-y-6">
-        {/* AI Provider Section */}
-        <div className="card-elevated p-4 space-y-4">
-          <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
-            AI Configuration
-          </h3>
-
-          {/* Provider Selection */}
-          <button
-            onClick={() => setShowProviderPicker(true)}
-            className="w-full flex items-center gap-3 p-3 rounded-xl bg-secondary hover:bg-secondary/80 transition-colors"
-          >
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-              <Bot className="w-5 h-5 text-primary" />
-            </div>
-            <div className="flex-1 text-left">
-              <p className="text-sm text-muted-foreground">AI Provider</p>
-              <p className="font-medium">
-                {providers.find(p => p.id === settings.aiProvider)?.name}
-              </p>
-            </div>
-            <ChevronRight className="w-5 h-5 text-muted-foreground" />
-          </button>
-
-          {/* API Key */}
-          <div className="space-y-3">
-            <button
-              onClick={() => setShowApiKeyInput(!showApiKeyInput)}
-              className="w-full flex items-center gap-3 p-3 rounded-xl bg-secondary hover:bg-secondary/80 transition-colors"
-            >
-              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                <Key className="w-5 h-5 text-primary" />
-              </div>
-              <div className="flex-1 text-left">
-                <p className="text-sm text-muted-foreground">API Key</p>
-                <p className="font-medium">
-                  {settings.apiKey ? '••••••••' + settings.apiKey.slice(-4) : 'Not set'}
-                </p>
-              </div>
-              <ChevronRight className="w-5 h-5 text-muted-foreground" />
-            </button>
-
-            {showApiKeyInput && (
-              <div className="p-4 rounded-xl bg-secondary space-y-3 animate-fade-in">
-                <Input
-                  type="password"
-                  placeholder="Enter new API key"
-                  value={newApiKey}
-                  onChange={(e) => setNewApiKey(e.target.value)}
-                  className="bg-background"
-                />
-                <div className="flex gap-2">
-                  <Button
-                    onClick={() => {
-                      setShowApiKeyInput(false);
-                      setNewApiKey('');
-                    }}
-                    variant="secondary"
-                    size="sm"
-                    className="flex-1"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleVerifyNewKey}
-                    size="sm"
-                    className="flex-1"
-                    disabled={isVerifying}
-                  >
-                    {isVerifying ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      'Verify & Save'
-                    )}
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
         {/* Appearance Section */}
         <div className="card-elevated p-4 space-y-4">
           <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
             Appearance
           </h3>
 
-          <div className="flex items-center gap-3 p-3 rounded-xl bg-secondary">
+          {/* Theme Toggle */}
+          <button
+            onClick={handleThemeToggle}
+            className="w-full flex items-center gap-3 p-3 rounded-xl bg-secondary hover:bg-secondary/80 transition-all touch-feedback"
+          >
+            <div className={cn(
+              "w-10 h-10 rounded-xl flex items-center justify-center transition-colors",
+              settings.darkMode ? "bg-indigo-500/20" : "bg-amber-500/20"
+            )}>
+              {settings.darkMode ? (
+                <Moon className="w-5 h-5 text-indigo-500" />
+              ) : (
+                <Sun className="w-5 h-5 text-amber-500" />
+              )}
+            </div>
+            <div className="flex-1 text-left">
+              <p className="font-medium">Theme</p>
+              <p className="text-sm text-muted-foreground">
+                {settings.darkMode ? 'Dark mode' : 'Light mode'}
+              </p>
+            </div>
+            <div className={cn(
+              "w-12 h-7 rounded-full p-1 transition-colors",
+              settings.darkMode ? "bg-indigo-500" : "bg-amber-500"
+            )}>
+              <div className={cn(
+                "w-5 h-5 rounded-full bg-white shadow-sm transition-transform",
+                settings.darkMode ? "translate-x-5" : "translate-x-0"
+              )} />
+            </div>
+          </button>
+        </div>
+
+        {/* AI Configuration Section */}
+        <div className="card-elevated p-4 space-y-4">
+          <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
+            AI Configuration
+          </h3>
+
+          <button
+            onClick={() => setShowProviderPicker(true)}
+            className="w-full flex items-center gap-3 p-3 rounded-xl bg-secondary hover:bg-secondary/80 transition-all touch-feedback"
+          >
             <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-              <Moon className="w-5 h-5 text-primary" />
+              <Bot className="w-5 h-5 text-primary" />
             </div>
-            <div className="flex-1">
-              <p className="font-medium">Dark Mode</p>
-              <p className="text-sm text-muted-foreground">Use dark theme</p>
+            <div className="flex-1 text-left">
+              <p className="text-sm text-muted-foreground">AI Provider</p>
+              <p className="font-medium">{providers.find(p => p.id === settings.aiProvider)?.name}</p>
             </div>
-            <Switch
-              checked={settings.darkMode}
-              onCheckedChange={handleDarkModeToggle}
-            />
+            <ChevronRight className="w-5 h-5 text-muted-foreground" />
+          </button>
+
+          <div className="space-y-3">
+            <button
+              onClick={() => setShowApiKeyInput(!showApiKeyInput)}
+              className="w-full flex items-center gap-3 p-3 rounded-xl bg-secondary hover:bg-secondary/80 transition-all touch-feedback"
+            >
+              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                <Key className="w-5 h-5 text-primary" />
+              </div>
+              <div className="flex-1 text-left">
+                <p className="text-sm text-muted-foreground">API Key</p>
+                <p className="font-medium">{settings.apiKey ? '••••••••' + settings.apiKey.slice(-4) : 'Not set'}</p>
+              </div>
+              <ChevronRight className="w-5 h-5 text-muted-foreground" />
+            </button>
+
+            {showApiKeyInput && (
+              <div className="p-4 rounded-xl bg-secondary space-y-3 animate-fade-in">
+                <Input type="password" placeholder="Enter new API key" value={newApiKey} onChange={(e) => setNewApiKey(e.target.value)} className="bg-background" />
+                <div className="flex gap-2">
+                  <Button onClick={() => { setShowApiKeyInput(false); setNewApiKey(''); }} variant="secondary" size="sm" className="flex-1">Cancel</Button>
+                  <Button onClick={handleVerifyNewKey} size="sm" className="flex-1" disabled={isVerifying}>
+                    {isVerifying ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Verify & Save'}
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -199,19 +209,70 @@ export default function Settings() {
               <p className="font-medium">Biometric Lock</p>
               <p className="text-sm text-muted-foreground">Require Face ID / Touch ID</p>
             </div>
-            <Switch
-              checked={settings.privacyLockEnabled}
-              onCheckedChange={handlePrivacyLockToggle}
-            />
+            <Switch checked={settings.privacyLockEnabled} onCheckedChange={(v) => updateSettings({ privacyLockEnabled: v })} />
           </div>
+
+          <button
+            onClick={() => setShowAutoLockPicker(true)}
+            className="w-full flex items-center gap-3 p-3 rounded-xl bg-secondary hover:bg-secondary/80 transition-all touch-feedback"
+          >
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <Clock className="w-5 h-5 text-primary" />
+            </div>
+            <div className="flex-1 text-left">
+              <p className="text-sm text-muted-foreground">Auto-Lock</p>
+              <p className="font-medium">{autoLockOptions.find(o => o.value === settings.autoLockTimeout)?.label || '5 minutes'}</p>
+            </div>
+            <ChevronRight className="w-5 h-5 text-muted-foreground" />
+          </button>
+
+          <div className="flex items-center gap-3 p-3 rounded-xl bg-secondary">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <EyeOff className="w-5 h-5 text-primary" />
+            </div>
+            <div className="flex-1">
+              <p className="font-medium">Hide Thumbnails</p>
+              <p className="text-sm text-muted-foreground">Show icons instead of previews</p>
+            </div>
+            <Switch checked={settings.hideThumbnails} onCheckedChange={(v) => updateSettings({ hideThumbnails: v })} />
+          </div>
+
+          <div className="flex items-center gap-3 p-3 rounded-xl bg-secondary">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <Shield className="w-5 h-5 text-primary" />
+            </div>
+            <div className="flex-1">
+              <p className="font-medium">Blur Sensitive Previews</p>
+              <p className="text-sm text-muted-foreground">Blur until tapped</p>
+            </div>
+            <Switch checked={settings.blurPreviews} onCheckedChange={(v) => updateSettings({ blurPreviews: v })} />
+          </div>
+        </div>
+
+        {/* Activity */}
+        <div className="card-elevated p-4 space-y-4">
+          <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
+            Activity
+          </h3>
+
+          <button
+            onClick={() => navigate('/timeline')}
+            className="w-full flex items-center gap-3 p-3 rounded-xl bg-secondary hover:bg-secondary/80 transition-all touch-feedback"
+          >
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <History className="w-5 h-5 text-primary" />
+            </div>
+            <div className="flex-1 text-left">
+              <p className="font-medium">Activity Timeline</p>
+              <p className="text-sm text-muted-foreground">View your history</p>
+            </div>
+            <ChevronRight className="w-5 h-5 text-muted-foreground" />
+          </button>
         </div>
 
         {/* About Section */}
         <div className="card-elevated p-4 space-y-4">
-          <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
-            About
-          </h3>
-
+          <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">About</h3>
           <div className="flex items-center gap-3 p-3 rounded-xl bg-secondary">
             <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
               <Info className="w-5 h-5 text-primary" />
@@ -227,38 +288,50 @@ export default function Settings() {
       {/* Provider Picker Modal */}
       {showProviderPicker && (
         <>
-          <div
-            className="fixed inset-0 bottom-sheet-overlay z-50 animate-fade-in"
-            onClick={() => setShowProviderPicker(false)}
-          />
+          <div className="fixed inset-0 bottom-sheet-overlay z-50 animate-fade-in" onClick={() => setShowProviderPicker(false)} />
           <div className="fixed bottom-0 left-0 right-0 bg-card rounded-t-3xl z-50 animate-slide-up safe-area-bottom">
             <div className="p-6">
               <div className="w-10 h-1 bg-muted rounded-full mx-auto mb-6" />
               <h2 className="text-xl font-bold mb-4">Select AI Provider</h2>
               <div className="space-y-2">
                 {providers.map((provider) => (
-                  <button
-                    key={provider.id}
-                    onClick={() => handleProviderChange(provider.id)}
-                    className={cn(
-                      "w-full flex items-center gap-3 p-4 rounded-2xl transition-all",
-                      settings.aiProvider === provider.id
-                        ? "bg-primary/10 border-2 border-primary"
-                        : "bg-secondary border-2 border-transparent hover:bg-secondary/80"
-                    )}
-                  >
-                    <div className={cn(
-                      "w-10 h-10 rounded-xl flex items-center justify-center",
-                      settings.aiProvider === provider.id
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-muted-foreground"
+                  <button key={provider.id} onClick={() => handleProviderChange(provider.id)}
+                    className={cn("w-full flex items-center gap-3 p-4 rounded-2xl transition-all touch-feedback",
+                      settings.aiProvider === provider.id ? "bg-primary/10 border-2 border-primary" : "bg-secondary border-2 border-transparent"
                     )}>
-                      <Bot className="w-5 h-5" />
+                    <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center",
+                      settings.aiProvider === provider.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                    )}><Bot className="w-5 h-5" /></div>
+                    <div className="flex-1 text-left">
+                      <p className="font-medium">{provider.name}</p>
+                      <p className="text-sm text-muted-foreground">{provider.description}</p>
                     </div>
-                    <span className="font-medium flex-1 text-left">{provider.name}</span>
-                    {settings.aiProvider === provider.id && (
-                      <CheckCircle2 className="w-5 h-5 text-primary" />
-                    )}
+                    {settings.aiProvider === provider.id && <CheckCircle2 className="w-5 h-5 text-primary" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Auto-Lock Picker Modal */}
+      {showAutoLockPicker && (
+        <>
+          <div className="fixed inset-0 bottom-sheet-overlay z-50 animate-fade-in" onClick={() => setShowAutoLockPicker(false)} />
+          <div className="fixed bottom-0 left-0 right-0 bg-card rounded-t-3xl z-50 animate-slide-up safe-area-bottom">
+            <div className="p-6">
+              <div className="w-10 h-1 bg-muted rounded-full mx-auto mb-6" />
+              <h2 className="text-xl font-bold mb-4">Auto-Lock Timeout</h2>
+              <div className="space-y-2">
+                {autoLockOptions.map((option) => (
+                  <button key={option.value}
+                    onClick={() => { updateSettings({ autoLockTimeout: option.value }); setShowAutoLockPicker(false); }}
+                    className={cn("w-full flex items-center gap-3 p-4 rounded-2xl transition-all touch-feedback",
+                      settings.autoLockTimeout === option.value ? "bg-primary/10 border-2 border-primary" : "bg-secondary border-2 border-transparent"
+                    )}>
+                    <span className="font-medium flex-1 text-left">{option.label}</span>
+                    {settings.autoLockTimeout === option.value && <CheckCircle2 className="w-5 h-5 text-primary" />}
                   </button>
                 ))}
               </div>
