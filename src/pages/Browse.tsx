@@ -196,7 +196,7 @@ export default function Browse() {
                               {file.metadata.date} • {formatFileSize(file.size)}
                             </span>
                           </div>
-                          {file.tags.length > 0 && (
+                          {file.tags && file.tags.length > 0 && (
                             <div className="flex flex-wrap gap-1 mt-1.5">
                               {file.tags.slice(0, 2).map((tag) => {
                                 const tagConfig = tagConfigs[tag as DocumentTag];

@@ -349,12 +349,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const lowerQuery = query.toLowerCase();
     return files.filter(file => 
       file.name.toLowerCase().includes(lowerQuery) ||
-      file.extractedText.toLowerCase().includes(lowerQuery) ||
-      file.tags.some(tag => tag.toLowerCase().includes(lowerQuery)) ||
-      file.extractedFields.some(field => 
+      (file.extractedText && file.extractedText.toLowerCase().includes(lowerQuery)) ||
+      (file.tags && file.tags.some(tag => tag.toLowerCase().includes(lowerQuery))) ||
+      (file.extractedFields && file.extractedFields.some(field => 
         field.value.toLowerCase().includes(lowerQuery) ||
         field.key.toLowerCase().includes(lowerQuery)
-      )
+      ))
     );
   };
 
@@ -403,7 +403,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Apply tag filters
     for (const { pattern, tag } of tagPatterns) {
       if (pattern.test(lowerQuery)) {
-        results = results.filter(f => f.tags.includes(tag as DocumentTag));
+        results = results.filter(f => f.tags && f.tags.includes(tag as DocumentTag));
       }
     }
 
@@ -411,7 +411,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const wordMatch = lowerQuery.match(/(?:word|containing|with)\s+["']?(\w+)["']?/i);
     if (wordMatch) {
       const word = wordMatch[1].toLowerCase();
-      results = results.filter(f => f.extractedText.toLowerCase().includes(word));
+      results = results.filter(f => f.extractedText && f.extractedText.toLowerCase().includes(word));
     }
 
     // If no special patterns, do regular search
