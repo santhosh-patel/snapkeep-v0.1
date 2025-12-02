@@ -1,7 +1,6 @@
 import { useState, useMemo, useRef, useCallback } from 'react';
-import { Search, ChevronDown, ChevronRight, Star, Image, FileText, File, Camera, X, Sparkles, MoreVertical, Trash2, Share2, FolderInput, CheckCircle2 } from 'lucide-react';
+import { Search, ChevronDown, ChevronRight, Star, Image, FileText, File, Camera, X, Sparkles, MoreVertical, Trash2, Share2, FolderInput, CheckCircle2, ArrowUpDown, SortAsc, SortDesc } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import { useApp } from '@/contexts/AppContext';
 import { useNavigate } from 'react-router-dom';
 import { tagConfigs, DocumentTag } from '@/utils/autoTag';
@@ -9,6 +8,8 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 
 type FileCategory = 'image' | 'screenshot' | 'pdf' | 'document' | 'other';
+type SortField = 'name' | 'size' | 'date' | 'type';
+type SortOrder = 'asc' | 'desc';
 
 const categoryConfig: Record<FileCategory, { label: string; icon: React.ElementType; color: string }> = {
   image: { label: 'Images', icon: Image, color: 'text-blue-500 bg-blue-500/10' },
@@ -18,12 +19,11 @@ const categoryConfig: Record<FileCategory, { label: string; icon: React.ElementT
   other: { label: 'Other', icon: FileText, color: 'text-gray-500 bg-gray-500/10' },
 };
 
-const searchSuggestions = [
-  "Show all receipts",
-  "Find invoices from last month",
-  "Warranty documents",
-  "Bank statements",
-  "Documents with subscription",
+const sortOptions: { field: SortField; label: string }[] = [
+  { field: 'name', label: 'Name' },
+  { field: 'date', label: 'Date' },
+  { field: 'size', label: 'Size' },
+  { field: 'type', label: 'Type' },
 ];
 
 export default function Browse() {
@@ -38,12 +38,34 @@ export default function Browse() {
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [showMoveSheet, setShowMoveSheet] = useState(false);
+  const [showSortSheet, setShowSortSheet] = useState(false);
+  const [sortField, setSortField] = useState<SortField>('date');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
 
   const filteredFiles = useMemo(() => {
-    if (!searchQuery.trim()) return files;
-    return naturalLanguageSearch(searchQuery);
-  }, [searchQuery, files, naturalLanguageSearch]);
+    let result = searchQuery.trim() ? naturalLanguageSearch(searchQuery) : files;
+    
+    // Apply sorting
+    return [...result].sort((a, b) => {
+      let comparison = 0;
+      switch (sortField) {
+        case 'name':
+          comparison = a.name.localeCompare(b.name);
+          break;
+        case 'size':
+          comparison = a.size - b.size;
+          break;
+        case 'date':
+          comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+          break;
+        case 'type':
+          comparison = a.type.localeCompare(b.type);
+          break;
+      }
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
+  }, [searchQuery, files, naturalLanguageSearch, sortField, sortOrder]);
 
   const groupedFiles = filteredFiles.reduce((acc, file) => {
     const category = file.type as FileCategory;
@@ -65,11 +87,6 @@ export default function Browse() {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  const handleSuggestionClick = (suggestion: string) => {
-    setSearchQuery(suggestion);
-    setShowSuggestions(false);
   };
 
   // Long press handlers
@@ -158,7 +175,7 @@ export default function Browse() {
     } else {
       toast({
         title: "Share",
-        description: `${selectedFiles.size} file${selectedFiles.size > 1 ? 's' : ''} ready to share. Native sharing available for single files.`,
+        description: `${selectedFiles.size} file${selectedFiles.size > 1 ? 's' : ''} ready to share.`,
       });
     }
     cancelSelection();
@@ -204,6 +221,16 @@ export default function Browse() {
     }
   };
 
+  const handleSortChange = (field: SortField) => {
+    if (sortField === field) {
+      setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder('desc');
+    }
+    setShowSortSheet(false);
+  };
+
   return (
     <div className="min-h-screen bg-background pb-24 safe-area-top">
       {/* Header */}
@@ -222,14 +249,23 @@ export default function Browse() {
           </div>
         ) : (
           <>
-            <h1 className="text-2xl font-bold mb-4">Browse</h1>
+            <div className="flex items-center justify-between mb-4">
+              <h1 className="text-2xl font-bold">Browse</h1>
+              <button
+                onClick={() => setShowSortSheet(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary text-sm font-medium touch-feedback"
+              >
+                <ArrowUpDown className="w-4 h-4" />
+                {sortOptions.find(s => s.field === sortField)?.label}
+                {sortOrder === 'asc' ? <SortAsc className="w-3 h-3" /> : <SortDesc className="w-3 h-3" />}
+              </button>
+            </div>
             <div className="relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
               <Input
-                placeholder="Search or ask a question..."
+                placeholder="Search files..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                onFocus={() => setShowSuggestions(true)}
                 className="pl-12 pr-10"
               />
               {searchQuery && (
@@ -241,26 +277,6 @@ export default function Browse() {
                 </button>
               )}
             </div>
-
-            {showSuggestions && !searchQuery && (
-              <div className="mt-3 space-y-2 animate-fade-in">
-                <p className="text-xs text-muted-foreground flex items-center gap-1">
-                  <Sparkles className="w-3 h-3" />
-                  Try natural language search:
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {searchSuggestions.map((suggestion) => (
-                    <button
-                      key={suggestion}
-                      onClick={() => handleSuggestionClick(suggestion)}
-                      className="text-xs px-3 py-1.5 rounded-full bg-secondary hover:bg-secondary/80 text-secondary-foreground transition-colors"
-                    >
-                      {suggestion}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {searchQuery && (
               <p className="text-sm text-muted-foreground mt-2">
@@ -319,7 +335,7 @@ export default function Browse() {
             </div>
             <h3 className="text-lg font-semibold mb-2">No results</h3>
             <p className="text-muted-foreground text-sm max-w-xs">
-              Try a different search term or use natural language like "receipts from last month"
+              Try a different search term
             </p>
           </div>
         ) : (
@@ -384,11 +400,15 @@ export default function Browse() {
                             className="flex-1 flex items-center gap-3 text-left touch-feedback"
                           >
                             <div className={cn(
-                              "w-12 h-12 rounded-lg bg-muted overflow-hidden flex-shrink-0 relative",
+                              "w-14 h-14 rounded-lg bg-muted overflow-hidden flex-shrink-0 relative",
                               settings.blurPreviews && "blur-sensitive"
                             )}>
                               {file.thumbnail && !settings.hideThumbnails ? (
                                 <img src={file.thumbnail} alt={file.name} className="w-full h-full object-cover" />
+                              ) : file.uri && file.type === 'pdf' ? (
+                                <div className="w-full h-full flex items-center justify-center bg-red-100 dark:bg-red-900/30">
+                                  <FileText className="w-6 h-6 text-red-500" />
+                                </div>
                               ) : (
                                 <div className="w-full h-full flex items-center justify-center">
                                   <Icon className="w-6 h-6 text-muted-foreground" />
@@ -477,6 +497,42 @@ export default function Browse() {
           })
         )}
       </div>
+
+      {/* Sort Sheet */}
+      {showSortSheet && (
+        <>
+          <div
+            className="fixed inset-0 bottom-sheet-overlay z-50 animate-fade-in"
+            onClick={() => setShowSortSheet(false)}
+          />
+          <div className="fixed bottom-0 left-0 right-0 bg-card rounded-t-3xl z-50 animate-slide-up safe-area-bottom">
+            <div className="p-6">
+              <div className="w-10 h-1 bg-muted rounded-full mx-auto mb-6" />
+              <h2 className="text-xl font-bold mb-4">Sort By</h2>
+              <div className="space-y-2">
+                {sortOptions.map((option) => (
+                  <button
+                    key={option.field}
+                    onClick={() => handleSortChange(option.field)}
+                    className={cn(
+                      "w-full flex items-center justify-between p-4 rounded-2xl transition-colors touch-feedback",
+                      sortField === option.field ? "bg-primary/10 border-2 border-primary" : "bg-secondary border-2 border-transparent"
+                    )}
+                  >
+                    <span className="font-medium">{option.label}</span>
+                    {sortField === option.field && (
+                      <div className="flex items-center gap-2">
+                        {sortOrder === 'asc' ? <SortAsc className="w-4 h-4 text-primary" /> : <SortDesc className="w-4 h-4 text-primary" />}
+                        <span className="text-sm text-primary">{sortOrder === 'asc' ? 'Ascending' : 'Descending'}</span>
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Move Sheet */}
       {showMoveSheet && (
