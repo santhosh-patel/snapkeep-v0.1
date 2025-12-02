@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Share2, FileText, Calendar, Tag, FileType, 
-  Pencil, Star, DollarSign, Hash 
+  Pencil, Star, DollarSign, Hash, Download, ExternalLink 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useApp } from '@/contexts/AppContext';
@@ -14,8 +14,9 @@ import { cn } from '@/lib/utils';
 export default function FilePreview() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { files, removeFile, addTimelineEvent } = useApp();
+  const { files, removeFile, addTimelineEvent, settings } = useApp();
   const [showEditSheet, setShowEditSheet] = useState(false);
+  const [isImageExpanded, setIsImageExpanded] = useState(false);
 
   const file = files.find(f => f.id === id);
 
@@ -33,20 +34,54 @@ export default function FilePreview() {
 
   const handleShare = async () => {
     try {
-      if (navigator.share) {
+      if (navigator.share && file.uri) {
+        // Try to share the actual file
+        const response = await fetch(file.uri);
+        const blob = await response.blob();
+        const fileToShare = new File([blob], file.name, { type: file.mimeType });
+        
         await navigator.share({
           title: file.name,
-          text: file.extractedText,
+          files: [fileToShare],
+        });
+      } else if (navigator.share) {
+        await navigator.share({
+          title: file.name,
+          text: `Check out: ${file.name}`,
         });
       } else {
-        await navigator.clipboard.writeText(file.extractedText);
         toast({
-          title: "Copied to clipboard",
-          description: "File text has been copied.",
+          title: "Share not supported",
+          description: "Your browser doesn't support sharing.",
+          variant: "destructive",
         });
       }
     } catch (error) {
-      console.error('Share failed:', error);
+      if ((error as Error).name !== 'AbortError') {
+        toast({
+          title: "Share failed",
+          description: "Could not share this file.",
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
+  const handleDownload = () => {
+    if (file.uri) {
+      const link = document.createElement('a');
+      link.href = file.uri;
+      link.download = file.name;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast({ title: "Download started" });
+    }
+  };
+
+  const handleOpenExternal = () => {
+    if (file.uri) {
+      window.open(file.uri, '_blank');
     }
   };
 
@@ -79,6 +114,9 @@ export default function FilePreview() {
       default: return Tag;
     }
   };
+
+  const isImage = file.type === 'image' || file.type === 'screenshot';
+  const isPdf = file.type === 'pdf';
 
   return (
     <div className="min-h-screen bg-background safe-area-top safe-area-bottom">
@@ -120,19 +158,63 @@ export default function FilePreview() {
 
       {/* Content */}
       <div className="p-4 space-y-6 pb-24">
-        {/* Thumbnail */}
-        {file.thumbnail && (
-          <div className="card-elevated overflow-hidden">
+        {/* File Preview */}
+        <div className="card-elevated overflow-hidden">
+          {isImage && file.uri && (
+            <button
+              onClick={() => setIsImageExpanded(!isImageExpanded)}
+              className="w-full"
+            >
+              <img
+                src={file.uri}
+                alt={file.name}
+                className={cn(
+                  "w-full object-contain bg-muted transition-all",
+                  isImageExpanded ? "max-h-[80vh]" : "max-h-64",
+                  settings.blurPreviews && "blur-sensitive"
+                )}
+              />
+            </button>
+          )}
+          
+          {isPdf && file.uri && (
+            <div className="relative">
+              <iframe
+                src={file.uri}
+                title={file.name}
+                className="w-full h-96 border-0"
+              />
+              <div className="absolute bottom-2 right-2 flex gap-2">
+                <Button
+                  onClick={handleOpenExternal}
+                  size="sm"
+                  variant="secondary"
+                  className="gap-1"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  Open
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {!isImage && !isPdf && file.thumbnail && (
             <img
               src={file.thumbnail}
               alt={file.name}
               className="w-full max-h-64 object-contain bg-muted"
             />
-          </div>
-        )}
+          )}
+
+          {!isImage && !isPdf && !file.thumbnail && (
+            <div className="h-48 flex items-center justify-center bg-muted">
+              <FileText className="w-16 h-16 text-muted-foreground" />
+            </div>
+          )}
+        </div>
 
         {/* Tags */}
-        {file.tags.length > 0 && (
+        {file.tags && file.tags.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {file.tags.map((tag) => {
               const tagConfig = tagConfigs[tag as DocumentTag];
@@ -182,7 +264,7 @@ export default function FilePreview() {
         </div>
 
         {/* Extracted Fields */}
-        {file.extractedFields.length > 0 && (
+        {file.extractedFields && file.extractedFields.length > 0 && (
           <div className="card-elevated p-4 space-y-4">
             <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
               Extracted Information
@@ -220,22 +302,30 @@ export default function FilePreview() {
         )}
 
         {/* Extracted Text */}
-        <div className="card-elevated p-4 space-y-3">
-          <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
-            Extracted Text
-          </h3>
-          <div className="bg-secondary rounded-xl p-4">
-            <p className="text-sm whitespace-pre-wrap leading-relaxed">
-              {file.extractedText || 'No text extracted from this file.'}
-            </p>
+        {file.extractedText && (
+          <div className="card-elevated p-4 space-y-3">
+            <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
+              Extracted Text
+            </h3>
+            <div className="bg-secondary rounded-xl p-4">
+              <p className="text-sm whitespace-pre-wrap leading-relaxed">
+                {file.extractedText}
+              </p>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Actions */}
-        <Button onClick={handleShare} size="lg" className="w-full gap-2">
-          <Share2 className="w-5 h-5" />
-          Open / Share
-        </Button>
+        <div className="flex gap-3">
+          <Button onClick={handleDownload} size="lg" variant="secondary" className="flex-1 gap-2">
+            <Download className="w-5 h-5" />
+            Download
+          </Button>
+          <Button onClick={handleShare} size="lg" className="flex-1 gap-2">
+            <Share2 className="w-5 h-5" />
+            Share
+          </Button>
+        </div>
       </div>
 
       {/* Edit Sheet */}
@@ -245,6 +335,28 @@ export default function FilePreview() {
         onClose={() => setShowEditSheet(false)}
         onDelete={handleDelete}
       />
+
+      {/* Expanded Image Overlay */}
+      {isImageExpanded && isImage && file.uri && (
+        <div
+          className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
+          onClick={() => setIsImageExpanded(false)}
+        >
+          <Button
+            onClick={() => setIsImageExpanded(false)}
+            variant="ghost"
+            size="icon"
+            className="absolute top-4 right-4 text-white hover:bg-white/20"
+          >
+            <ArrowLeft className="w-6 h-6" />
+          </Button>
+          <img
+            src={file.uri}
+            alt={file.name}
+            className="max-w-full max-h-full object-contain"
+          />
+        </div>
+      )}
     </div>
   );
 }
