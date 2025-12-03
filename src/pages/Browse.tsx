@@ -289,7 +289,7 @@ export default function Browse() {
 
       {/* Selection Action Bar */}
       {isSelectionMode && selectedFiles.size > 0 && (
-        <div className="fixed bottom-20 left-4 right-4 bg-card rounded-2xl shadow-lg border border-border p-3 z-40 animate-slide-up">
+        <div className="fixed bottom-24 left-4 right-4 bg-card rounded-2xl shadow-lg border border-border p-3 z-[60] animate-slide-up">
           <div className="flex items-center justify-around">
             <button
               onClick={handleDelete}

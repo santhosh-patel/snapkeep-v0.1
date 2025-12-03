@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Trash2, Loader2, FileText, ExternalLink, Sparkles, WifiOff } from 'lucide-react';
+import { Send, Bot, User, Trash2, Loader2, FileText, ExternalLink, Sparkles, WifiOff, Settings, Key } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useApp } from '@/contexts/AppContext';
@@ -35,6 +35,9 @@ export default function Chat() {
     scrollToBottom();
   }, [chatMessages]);
 
+  // Check if API key is set
+  const isApiKeySet = settings.apiKey && settings.apiKey.length > 0;
+
   const searchDocuments = (query: string): Reference[] => {
     const results = naturalLanguageSearch(query);
     
@@ -44,16 +47,16 @@ export default function Chat() {
       
       let snippet = '';
       for (const keyword of keywords) {
-        const index = file.extractedText.toLowerCase().indexOf(keyword);
+        const index = (file.extractedText || '').toLowerCase().indexOf(keyword);
         if (index !== -1) {
           const start = Math.max(0, index - 40);
-          const end = Math.min(file.extractedText.length, index + keyword.length + 60);
-          snippet = '...' + file.extractedText.slice(start, end).trim() + '...';
+          const end = Math.min((file.extractedText || '').length, index + keyword.length + 60);
+          snippet = '...' + (file.extractedText || '').slice(start, end).trim() + '...';
           break;
         }
       }
       if (!snippet) {
-        snippet = file.extractedText.slice(0, 80) + '...';
+        snippet = (file.extractedText || '').slice(0, 80) + '...';
       }
 
       return { fileId: file.id, fileName: file.name, snippet };
@@ -82,14 +85,14 @@ export default function Chat() {
     let response = '';
 
     if (lowerMessage.includes('spend') || lowerMessage.includes('total') || lowerMessage.includes('how much')) {
-      const amounts = files.flatMap(f => f.extractedFields.filter(ef => ef.type === 'amount'));
+      const amounts = files.flatMap(f => (f.extractedFields || []).filter(ef => ef.type === 'amount'));
       const total = amounts.reduce((sum, a) => {
         const num = parseFloat(a.value.replace(/[$,]/g, ''));
         return isNaN(num) ? sum : sum + num;
       }, 0);
       response = `Based on ${references.length} documents, I found **$${total.toFixed(2)}** in recorded amounts. Here are the relevant files:`;
     } else if (lowerMessage.includes('due') || lowerMessage.includes('deadline') || lowerMessage.includes('expire') || lowerMessage.includes('when')) {
-      const dates = files.flatMap(f => f.extractedFields.filter(ef => ef.type === 'date'));
+      const dates = files.flatMap(f => (f.extractedFields || []).filter(ef => ef.type === 'date'));
       response = `I found **${dates.length} dates** across your documents. Check your Reminders for tracked due dates. Relevant files:`;
     } else if (lowerMessage.includes('last month') || lowerMessage.includes('recent')) {
       response = `Found **${references.length} documents** from your search criteria. Here's what matches:`;
@@ -127,6 +130,42 @@ export default function Chat() {
       handleSend();
     }
   };
+
+  // Show API key prompt if not set
+  if (!isApiKeySet) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col safe-area-top">
+        {/* Header */}
+        <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 flex items-center justify-between p-4 border-b border-border">
+          <div>
+            <h1 className="text-2xl font-bold">Chat</h1>
+            <p className="text-sm text-muted-foreground">AI-powered document search</p>
+          </div>
+        </div>
+
+        {/* API Key Required Message */}
+        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+          <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mb-6">
+            <Key className="w-10 h-10 text-primary" />
+          </div>
+          <h2 className="text-xl font-bold mb-2">API Key Required</h2>
+          <p className="text-muted-foreground mb-6 max-w-xs">
+            To use the AI chat feature, please set your API key in Settings first.
+          </p>
+          <Button
+            onClick={() => navigate('/settings')}
+            className="gap-2"
+          >
+            <Settings className="w-4 h-4" />
+            Go to Settings
+          </Button>
+          <p className="text-xs text-muted-foreground mt-4 max-w-xs">
+            You can skip this step and browse your files without AI features.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex flex-col safe-area-top">

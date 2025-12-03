@@ -13,6 +13,7 @@ interface AppSettings {
   hideThumbnails: boolean;
   blurPreviews: boolean;
   autoLockTimeout: number; // minutes, 0 = disabled
+  lockPin: string; // User's PIN for lock screen
 }
 
 export interface ExtractedField {
@@ -127,6 +128,7 @@ const defaultSettings: AppSettings = {
   hideThumbnails: false,
   blurPreviews: false,
   autoLockTimeout: 5,
+  lockPin: '',
 };
 
 const AppContext = createContext<AppContextType | undefined>(undefined);

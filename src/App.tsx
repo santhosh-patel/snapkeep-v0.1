@@ -14,6 +14,7 @@ import Timeline from "./pages/Timeline";
 import Planner from "./pages/Planner";
 import FilePreview from "./pages/FilePreview";
 import NotFound from "./pages/NotFound";
+import Auth from "./pages/Auth";
 
 const queryClient = new QueryClient();
 
@@ -31,6 +32,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/browse" replace />} />
+      <Route path="/auth" element={<Auth />} />
       <Route element={<MainLayout />}>
         <Route path="/browse" element={<Browse />} />
         <Route path="/chat" element={<Chat />} />

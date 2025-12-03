@@ -27,8 +27,6 @@ export function UploadSheet({ isOpen, onClose }: UploadSheetProps) {
   };
 
   const processFile = async (file: File) => {
-    setIsProcessing(true);
-    
     try {
       // Create thumbnail for images
       let thumbnail: string | undefined;
@@ -82,28 +80,31 @@ export function UploadSheet({ isOpen, onClose }: UploadSheetProps) {
         fileId: newFile.id,
       });
       
-      toast({
-        title: "File uploaded",
-        description: `${file.name} has been saved.`,
-      });
-      
-      setIsProcessing(false);
-      onClose();
-      
     } catch (error) {
       toast({
         title: "Upload failed",
-        description: "There was an error processing your file.",
+        description: `Error processing ${file.name}.`,
         variant: "destructive",
       });
-      setIsProcessing(false);
     }
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      processFile(file);
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (fileList && fileList.length > 0) {
+      setIsProcessing(true);
+      // Process all files
+      for (let i = 0; i < fileList.length; i++) {
+        await processFile(fileList[i]);
+      }
+      setIsProcessing(false);
+      toast({
+        title: fileList.length === 1 ? "File uploaded" : "Files uploaded",
+        description: fileList.length === 1 
+          ? `${fileList[0].name} has been saved.` 
+          : `${fileList.length} files have been saved.`,
+      });
+      onClose();
     }
     e.target.value = '';
   };
@@ -149,8 +150,8 @@ export function UploadSheet({ isOpen, onClose }: UploadSheetProps) {
                   <Upload className="w-6 h-6 text-primary" />
                 </div>
                 <div className="text-left">
-                  <p className="font-semibold">Upload File</p>
-                  <p className="text-sm text-muted-foreground">Select from your device</p>
+                  <p className="font-semibold">Upload Files</p>
+                  <p className="text-sm text-muted-foreground">Select one or multiple files</p>
                 </div>
               </button>
 
@@ -177,6 +178,7 @@ export function UploadSheet({ isOpen, onClose }: UploadSheetProps) {
           type="file"
           accept="image/*,application/pdf,.doc,.docx,.txt"
           onChange={handleFileSelect}
+          multiple
           className="hidden"
         />
         <input
