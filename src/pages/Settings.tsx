@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Bot, Key, Moon, Sun, Fingerprint, Info, CheckCircle2, Loader2, 
-  ChevronRight, Eye, EyeOff, Clock, Shield, History, Wifi, WifiOff 
+  ChevronRight, Eye, EyeOff, Clock, Shield, History, Wifi, WifiOff, Lock, LogOut, User 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { useApp, AIProvider } from '@/contexts/AppContext';
+import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
@@ -28,11 +29,22 @@ const autoLockOptions = [
 export default function Settings() {
   const navigate = useNavigate();
   const { settings, updateSettings, isOnline, addTimelineEvent } = useApp();
+  const { user, signOut } = useAuth();
   const [showApiKeyInput, setShowApiKeyInput] = useState(false);
   const [newApiKey, setNewApiKey] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
   const [showProviderPicker, setShowProviderPicker] = useState(false);
   const [showAutoLockPicker, setShowAutoLockPicker] = useState(false);
+  const [showPinSetup, setShowPinSetup] = useState(false);
+  const [newPin, setNewPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [pinError, setPinError] = useState('');
+
+  const handleSignOut = async () => {
+    await signOut();
+    toast({ title: "Signed out", description: "You have been signed out successfully" });
+    navigate('/auth');
+  };
 
   const handleProviderChange = (provider: AIProvider) => {
     updateSettings({ aiProvider: provider });
@@ -80,6 +92,42 @@ export default function Settings() {
     toast({
       title: newDarkMode ? "Dark mode enabled" : "Light mode enabled",
       description: `Switched to ${newDarkMode ? 'dark' : 'light'} theme`,
+    });
+  };
+
+  const handlePinSetup = () => {
+    setPinError('');
+    
+    if (newPin.length < 4) {
+      setPinError('PIN must be at least 4 digits');
+      return;
+    }
+    
+    if (newPin !== confirmPin) {
+      setPinError('PINs do not match');
+      return;
+    }
+
+    updateSettings({ lockPin: newPin, privacyLockEnabled: true });
+    addTimelineEvent({
+      type: 'settings_changed',
+      title: 'PIN Set Up',
+      description: 'Lock screen PIN has been configured',
+    });
+    setNewPin('');
+    setConfirmPin('');
+    setShowPinSetup(false);
+    toast({
+      title: "PIN set up successfully",
+      description: "Your lock screen PIN has been saved.",
+    });
+  };
+
+  const handleRemovePin = () => {
+    updateSettings({ lockPin: '', privacyLockEnabled: false });
+    toast({
+      title: "PIN removed",
+      description: "Lock screen has been disabled.",
     });
   };
 
@@ -151,6 +199,9 @@ export default function Settings() {
           <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
             AI Configuration
           </h3>
+          <p className="text-xs text-muted-foreground -mt-2">
+            Optional: Set API key to enable AI chat features
+          </p>
 
           <button
             onClick={() => setShowProviderPicker(true)}
@@ -176,7 +227,7 @@ export default function Settings() {
               </div>
               <div className="flex-1 text-left">
                 <p className="text-sm text-muted-foreground">API Key</p>
-                <p className="font-medium">{settings.apiKey ? '••••••••' + settings.apiKey.slice(-4) : 'Not set'}</p>
+                <p className="font-medium">{settings.apiKey ? '••••••••' + settings.apiKey.slice(-4) : 'Not set (optional)'}</p>
               </div>
               <ChevronRight className="w-5 h-5 text-muted-foreground" />
             </button>
@@ -201,6 +252,23 @@ export default function Settings() {
             Privacy & Security
           </h3>
 
+          {/* PIN Setup */}
+          <button
+            onClick={() => setShowPinSetup(true)}
+            className="w-full flex items-center gap-3 p-3 rounded-xl bg-secondary hover:bg-secondary/80 transition-all touch-feedback"
+          >
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <Lock className="w-5 h-5 text-primary" />
+            </div>
+            <div className="flex-1 text-left">
+              <p className="font-medium">Lock Screen PIN</p>
+              <p className="text-sm text-muted-foreground">
+                {settings.lockPin ? 'PIN is set' : 'Set up a PIN'}
+              </p>
+            </div>
+            <ChevronRight className="w-5 h-5 text-muted-foreground" />
+          </button>
+
           <div className="flex items-center gap-3 p-3 rounded-xl bg-secondary">
             <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
               <Fingerprint className="w-5 h-5 text-primary" />
@@ -209,7 +277,16 @@ export default function Settings() {
               <p className="font-medium">Biometric Lock</p>
               <p className="text-sm text-muted-foreground">Require Face ID / Touch ID</p>
             </div>
-            <Switch checked={settings.privacyLockEnabled} onCheckedChange={(v) => updateSettings({ privacyLockEnabled: v })} />
+            <Switch 
+              checked={settings.privacyLockEnabled} 
+              onCheckedChange={(v) => {
+                if (v && !settings.lockPin) {
+                  setShowPinSetup(true);
+                } else {
+                  updateSettings({ privacyLockEnabled: v });
+                }
+              }} 
+            />
           </div>
 
           <button
@@ -268,6 +345,47 @@ export default function Settings() {
             </div>
             <ChevronRight className="w-5 h-5 text-muted-foreground" />
           </button>
+        </div>
+
+        {/* Account Section */}
+        <div className="card-elevated p-4 space-y-4">
+          <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Account</h3>
+          {user ? (
+            <>
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-secondary">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <User className="w-5 h-5 text-primary" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium">Signed in</p>
+                  <p className="text-sm text-muted-foreground truncate">{user.email}</p>
+                </div>
+              </div>
+              <button
+                onClick={handleSignOut}
+                className="w-full flex items-center gap-3 p-3 rounded-xl bg-destructive/10 hover:bg-destructive/20 transition-all touch-feedback"
+              >
+                <div className="w-10 h-10 rounded-xl bg-destructive/10 flex items-center justify-center">
+                  <LogOut className="w-5 h-5 text-destructive" />
+                </div>
+                <p className="font-medium text-destructive">Sign Out</p>
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => navigate('/auth')}
+              className="w-full flex items-center gap-3 p-3 rounded-xl bg-secondary hover:bg-secondary/80 transition-all touch-feedback"
+            >
+              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                <User className="w-5 h-5 text-primary" />
+              </div>
+              <div className="flex-1 text-left">
+                <p className="font-medium">Sign In</p>
+                <p className="text-sm text-muted-foreground">Secure your documents with Google</p>
+              </div>
+              <ChevronRight className="w-5 h-5 text-muted-foreground" />
+            </button>
+          )}
         </div>
 
         {/* About Section */}
@@ -334,6 +452,79 @@ export default function Settings() {
                     {settings.autoLockTimeout === option.value && <CheckCircle2 className="w-5 h-5 text-primary" />}
                   </button>
                 ))}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* PIN Setup Modal */}
+      {showPinSetup && (
+        <>
+          <div className="fixed inset-0 bottom-sheet-overlay z-50 animate-fade-in" onClick={() => { setShowPinSetup(false); setNewPin(''); setConfirmPin(''); setPinError(''); }} />
+          <div className="fixed bottom-0 left-0 right-0 bg-card rounded-t-3xl z-50 animate-slide-up safe-area-bottom">
+            <div className="p-6">
+              <div className="w-10 h-1 bg-muted rounded-full mx-auto mb-6" />
+              <h2 className="text-xl font-bold mb-4">
+                {settings.lockPin ? 'Change PIN' : 'Set Up PIN'}
+              </h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm text-muted-foreground mb-1 block">New PIN (min 4 digits)</label>
+                  <Input
+                    type="password"
+                    placeholder="Enter PIN"
+                    value={newPin}
+                    onChange={(e) => {
+                      setNewPin(e.target.value.replace(/\D/g, ''));
+                      setPinError('');
+                    }}
+                    maxLength={6}
+                    className="text-center text-xl tracking-widest"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-muted-foreground mb-1 block">Confirm PIN</label>
+                  <Input
+                    type="password"
+                    placeholder="Confirm PIN"
+                    value={confirmPin}
+                    onChange={(e) => {
+                      setConfirmPin(e.target.value.replace(/\D/g, ''));
+                      setPinError('');
+                    }}
+                    maxLength={6}
+                    className="text-center text-xl tracking-widest"
+                  />
+                </div>
+                {pinError && (
+                  <p className="text-destructive text-sm text-center">{pinError}</p>
+                )}
+                <div className="flex gap-2 pt-2">
+                  <Button 
+                    onClick={() => { setShowPinSetup(false); setNewPin(''); setConfirmPin(''); setPinError(''); }} 
+                    variant="secondary" 
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    onClick={handlePinSetup} 
+                    className="flex-1"
+                    disabled={newPin.length < 4}
+                  >
+                    Save PIN
+                  </Button>
+                </div>
+                {settings.lockPin && (
+                  <Button 
+                    onClick={handleRemovePin} 
+                    variant="ghost" 
+                    className="w-full text-destructive hover:text-destructive"
+                  >
+                    Remove PIN
+                  </Button>
+                )}
               </div>
             </div>
           </div>

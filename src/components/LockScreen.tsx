@@ -6,7 +6,7 @@ import { useApp } from '@/contexts/AppContext';
 import logoImage from '@/assets/logo.png';
 
 export function LockScreen() {
-  const { unlockApp } = useApp();
+  const { unlockApp, settings } = useApp();
   const [showPinInput, setShowPinInput] = useState(false);
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
@@ -23,10 +23,26 @@ export function LockScreen() {
   };
 
   const handlePinUnlock = () => {
-    if (pin.length >= 4) {
+    if (pin.length < 4) {
+      setError('PIN must be at least 4 digits');
+      return;
+    }
+
+    // Validate against stored PIN
+    if (settings.lockPin && pin === settings.lockPin) {
+      unlockApp();
+    } else if (!settings.lockPin) {
+      // No PIN set, allow any PIN for backwards compatibility
       unlockApp();
     } else {
-      setError('PIN must be at least 4 digits');
+      setError('Incorrect PIN');
+      setPin('');
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handlePinUnlock();
     }
   };
 
@@ -76,6 +92,7 @@ export function LockScreen() {
                 setPin(e.target.value.replace(/\D/g, ''));
                 setError('');
               }}
+              onKeyPress={handleKeyPress}
               maxLength={6}
               className="text-center text-2xl tracking-widest"
               autoFocus
@@ -92,6 +109,7 @@ export function LockScreen() {
               onClick={() => {
                 setShowPinInput(false);
                 setError('');
+                setPin('');
               }}
               className="text-sm text-muted-foreground hover:text-foreground w-full text-center"
             >
