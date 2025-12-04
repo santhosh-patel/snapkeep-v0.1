@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Fingerprint, Lock } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Fingerprint, Lock, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useApp } from '@/contexts/AppContext';
@@ -10,15 +10,65 @@ export function LockScreen() {
   const [showPinInput, setShowPinInput] = useState(false);
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+
+  useEffect(() => {
+    // Check if Web Authentication API is available
+    checkBiometricAvailability();
+  }, []);
+
+  const checkBiometricAvailability = async () => {
+    try {
+      if (window.PublicKeyCredential) {
+        const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+        setBiometricAvailable(available);
+      }
+    } catch (err) {
+      console.log('Biometric check failed:', err);
+      setBiometricAvailable(false);
+    }
+  };
 
   const handleBiometricUnlock = async () => {
-    // Simulate biometric authentication
+    setIsAuthenticating(true);
+    setError('');
+    
     try {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      unlockApp();
-    } catch (err) {
-      setError('Biometric authentication failed');
+      if (biometricAvailable && window.PublicKeyCredential) {
+        // Use Web Authentication API for biometric authentication
+        const challenge = new Uint8Array(32);
+        crypto.getRandomValues(challenge);
+        
+        const publicKeyCredentialRequestOptions: PublicKeyCredentialRequestOptions = {
+          challenge,
+          timeout: 60000,
+          userVerification: 'required',
+          rpId: window.location.hostname,
+        };
+
+        await navigator.credentials.get({
+          publicKey: publicKeyCredentialRequestOptions,
+        });
+        
+        unlockApp();
+      } else {
+        // Fallback: simulate biometric for demo purposes
+        await new Promise(resolve => setTimeout(resolve, 800));
+        unlockApp();
+      }
+    } catch (err: any) {
+      console.error('Biometric auth error:', err);
+      if (err.name === 'NotAllowedError') {
+        setError('Authentication cancelled or not allowed');
+      } else if (err.name === 'SecurityError') {
+        setError('Security error. Please use PIN instead.');
+      } else {
+        setError('Biometric authentication failed');
+      }
       setShowPinInput(true);
+    } finally {
+      setIsAuthenticating(false);
     }
   };
 
@@ -123,17 +173,27 @@ export function LockScreen() {
               variant="default"
               size="lg"
               className="w-full gap-3"
+              disabled={isAuthenticating}
             >
-              <Fingerprint className="w-5 h-5" />
-              Unlock with Biometrics
+              <Fingerprint className={`w-5 h-5 ${isAuthenticating ? 'animate-pulse' : ''}`} />
+              {isAuthenticating ? 'Authenticating...' : 'Unlock with Biometrics'}
             </Button>
 
-            <button
-              onClick={() => setShowPinInput(true)}
-              className="text-sm text-muted-foreground hover:text-foreground w-full text-center"
-            >
-              Use PIN instead
-            </button>
+            {!biometricAvailable && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground bg-secondary/50 p-2 rounded-lg">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>Biometrics not available on this device</span>
+              </div>
+            )}
+
+            {settings.lockPin && (
+              <button
+                onClick={() => setShowPinInput(true)}
+                className="text-sm text-muted-foreground hover:text-foreground w-full text-center"
+              >
+                Use PIN instead
+              </button>
+            )}
           </div>
         )}
 
