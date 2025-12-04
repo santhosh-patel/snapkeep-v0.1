@@ -1,11 +1,13 @@
 import { useState, useMemo, useRef, useCallback } from 'react';
-import { Search, ChevronDown, ChevronRight, Star, Image, FileText, File, Camera, X, Sparkles, MoreVertical, Trash2, Share2, FolderInput, CheckCircle2, ArrowUpDown, SortAsc, SortDesc } from 'lucide-react';
+import { Search, ChevronDown, ChevronRight, Star, Image, FileText, File, Camera, X, Sparkles, MoreVertical, Trash2, Share2, FolderInput, CheckCircle2, ArrowUpDown, SortAsc, SortDesc, Folder, FolderPlus, Settings2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { useApp } from '@/contexts/AppContext';
 import { useNavigate } from 'react-router-dom';
 import { tagConfigs, DocumentTag } from '@/utils/autoTag';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
+import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog';
+import { FolderSheet } from '@/components/FolderSheet';
 
 type FileCategory = 'image' | 'screenshot' | 'pdf' | 'document' | 'other';
 type SortField = 'name' | 'size' | 'date' | 'type';
@@ -27,7 +29,7 @@ const sortOptions: { field: SortField; label: string }[] = [
 ];
 
 export default function Browse() {
-  const { files, naturalLanguageSearch, settings, removeFile, updateFile, addTimelineEvent } = useApp();
+  const { files, folders, naturalLanguageSearch, settings, removeFile, updateFile, addTimelineEvent } = useApp();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -39,12 +41,22 @@ export default function Browse() {
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [showMoveSheet, setShowMoveSheet] = useState(false);
   const [showSortSheet, setShowSortSheet] = useState(false);
+  const [showFolderSheet, setShowFolderSheet] = useState(false);
+  const [folderSheetMode, setFolderSheetMode] = useState<'manage' | 'select'>('manage');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ ids: Set<string>; name?: string } | null>(null);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | undefined>(undefined);
   const [sortField, setSortField] = useState<SortField>('date');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
 
   const filteredFiles = useMemo(() => {
     let result = searchQuery.trim() ? naturalLanguageSearch(searchQuery) : files;
+    
+    // Filter by folder
+    if (selectedFolderId) {
+      result = result.filter(f => f.folderId === selectedFolderId);
+    }
     
     // Apply sorting
     return [...result].sort((a, b) => {
@@ -65,7 +77,7 @@ export default function Browse() {
       }
       return sortOrder === 'asc' ? comparison : -comparison;
     });
-  }, [searchQuery, files, naturalLanguageSearch, sortField, sortOrder]);
+  }, [searchQuery, files, naturalLanguageSearch, sortField, sortOrder, selectedFolderId]);
 
   const groupedFiles = filteredFiles.reduce((acc, file) => {
     const category = file.type as FileCategory;
@@ -138,9 +150,20 @@ export default function Browse() {
   };
 
   // Actions
-  const handleDelete = () => {
-    const count = selectedFiles.size;
-    selectedFiles.forEach(id => {
+  const handleDeleteClick = () => {
+    const selectedFilesList = files.filter(f => selectedFiles.has(f.id));
+    setDeleteTarget({ 
+      ids: selectedFiles, 
+      name: selectedFiles.size === 1 ? selectedFilesList[0]?.name : undefined 
+    });
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!deleteTarget) return;
+    
+    const count = deleteTarget.ids.size;
+    deleteTarget.ids.forEach(id => {
       removeFile(id);
       addTimelineEvent({
         type: 'file_delete',
@@ -153,6 +176,8 @@ export default function Browse() {
       title: "Files deleted",
       description: `${count} file${count > 1 ? 's' : ''} deleted successfully.`,
     });
+    setShowDeleteConfirm(false);
+    setDeleteTarget(null);
     cancelSelection();
   };
 
@@ -193,21 +218,15 @@ export default function Browse() {
     cancelSelection();
   };
 
-  const handleMenuAction = (action: 'delete' | 'share' | 'move', fileId: string) => {
+  const handleMenuAction = (action: 'delete' | 'share' | 'move' | 'folder', fileId: string) => {
     setActiveMenu(null);
     setSelectedFiles(new Set([fileId]));
     setIsSelectionMode(true);
     
     if (action === 'delete') {
-      removeFile(fileId);
-      addTimelineEvent({
-        type: 'file_delete',
-        title: 'File Deleted',
-        description: `Deleted file`,
-        fileId,
-      });
-      toast({ title: "File deleted" });
-      cancelSelection();
+      const file = files.find(f => f.id === fileId);
+      setDeleteTarget({ ids: new Set([fileId]), name: file?.name });
+      setShowDeleteConfirm(true);
     } else if (action === 'share') {
       const file = files.find(f => f.id === fileId);
       if (file && navigator.share) {
@@ -218,7 +237,22 @@ export default function Browse() {
       cancelSelection();
     } else if (action === 'move') {
       setShowMoveSheet(true);
+    } else if (action === 'folder') {
+      setFolderSheetMode('select');
+      setShowFolderSheet(true);
     }
+  };
+
+  const handleMoveToFolder = (folderId: string | undefined) => {
+    selectedFiles.forEach(id => {
+      updateFile(id, { folderId });
+    });
+    const folderName = folderId ? folders.find(f => f.id === folderId)?.name : 'Uncategorized';
+    toast({
+      title: "Files moved",
+      description: `Moved to ${folderName}`,
+    });
+    cancelSelection();
   };
 
   const handleSortChange = (field: SortField) => {
@@ -283,6 +317,38 @@ export default function Browse() {
                 Found {filteredFiles.length} result{filteredFiles.length !== 1 ? 's' : ''}
               </p>
             )}
+
+            {/* Folder Filter */}
+            <div className="flex items-center gap-2 mt-3 overflow-x-auto pb-1 scrollbar-hide">
+              <button
+                onClick={() => setSelectedFolderId(undefined)}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors touch-feedback",
+                  !selectedFolderId ? "bg-primary text-primary-foreground" : "bg-secondary"
+                )}
+              >
+                All Files
+              </button>
+              {folders.map((folder) => (
+                <button
+                  key={folder.id}
+                  onClick={() => setSelectedFolderId(folder.id)}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors touch-feedback",
+                    selectedFolderId === folder.id ? "bg-primary text-primary-foreground" : "bg-secondary"
+                  )}
+                >
+                  <div className={cn("w-3 h-3 rounded-sm", folder.color)} />
+                  {folder.name}
+                </button>
+              ))}
+              <button
+                onClick={() => { setFolderSheetMode('manage'); setShowFolderSheet(true); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary text-sm font-medium whitespace-nowrap transition-colors touch-feedback"
+              >
+                <FolderPlus className="w-4 h-4" />
+              </button>
+            </div>
           </>
         )}
       </div>
@@ -292,7 +358,7 @@ export default function Browse() {
         <div className="fixed bottom-24 left-4 right-4 bg-card rounded-2xl shadow-lg border border-border p-3 z-[60] animate-slide-up">
           <div className="flex items-center justify-around">
             <button
-              onClick={handleDelete}
+              onClick={handleDeleteClick}
               className="flex flex-col items-center gap-1 p-3 rounded-xl hover:bg-destructive/10 transition-colors touch-feedback"
             >
               <Trash2 className="w-5 h-5 text-destructive" />
@@ -310,7 +376,14 @@ export default function Browse() {
               className="flex flex-col items-center gap-1 p-3 rounded-xl hover:bg-primary/10 transition-colors touch-feedback"
             >
               <FolderInput className="w-5 h-5 text-primary" />
-              <span className="text-xs font-medium">Move</span>
+              <span className="text-xs font-medium">Category</span>
+            </button>
+            <button
+              onClick={() => { setFolderSheetMode('select'); setShowFolderSheet(true); }}
+              className="flex flex-col items-center gap-1 p-3 rounded-xl hover:bg-primary/10 transition-colors touch-feedback"
+            >
+              <Folder className="w-5 h-5 text-primary" />
+              <span className="text-xs font-medium">Folder</span>
             </button>
           </div>
         </div>
@@ -566,6 +639,23 @@ export default function Browse() {
           </div>
         </>
       )}
+
+      {/* Folder Sheet */}
+      <FolderSheet
+        open={showFolderSheet}
+        onClose={() => { setShowFolderSheet(false); if (folderSheetMode === 'select') cancelSelection(); }}
+        onSelectFolder={handleMoveToFolder}
+        mode={folderSheetMode}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteConfirmDialog
+        open={showDeleteConfirm}
+        onOpenChange={setShowDeleteConfirm}
+        onConfirm={handleConfirmDelete}
+        itemCount={deleteTarget?.ids.size || 0}
+        itemName={deleteTarget?.name}
+      />
     </div>
   );
 }
