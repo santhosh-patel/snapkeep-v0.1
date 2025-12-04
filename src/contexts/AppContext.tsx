@@ -41,6 +41,7 @@ export interface StoredFile {
   createdAt: string;
   updatedAt: string;
   uri?: string;
+  folderId?: string;
 }
 
 export interface Reminder {
@@ -74,6 +75,13 @@ export interface SmartSuggestion {
   createdAt: string;
 }
 
+export interface Folder {
+  id: string;
+  name: string;
+  color: string;
+  createdAt: string;
+}
+
 export interface PendingAction {
   id: string;
   type: 'upload' | 'delete' | 'update' | 'tag';
@@ -92,6 +100,7 @@ interface ChatMessage {
 interface AppContextType {
   settings: AppSettings;
   files: StoredFile[];
+  folders: Folder[];
   reminders: Reminder[];
   timeline: TimelineEvent[];
   chatMessages: ChatMessage[];
@@ -102,6 +111,9 @@ interface AppContextType {
   addFile: (file: StoredFile) => void;
   updateFile: (id: string, updates: Partial<StoredFile>) => void;
   removeFile: (id: string) => void;
+  addFolder: (folder: Omit<Folder, 'id' | 'createdAt'>) => void;
+  updateFolder: (id: string, updates: Partial<Folder>) => void;
+  removeFolder: (id: string) => void;
   addReminder: (reminder: Reminder) => void;
   updateReminder: (id: string, updates: Partial<Reminder>) => void;
   removeReminder: (id: string) => void;
@@ -145,6 +157,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const [files, setFiles] = useState<StoredFile[]>(() => {
     const stored = localStorage.getItem('snapkeep_files');
+    return stored ? JSON.parse(stored) : [];
+  });
+
+  const [folders, setFolders] = useState<Folder[]>(() => {
+    const stored = localStorage.getItem('snapkeep_folders');
     return stored ? JSON.parse(stored) : [];
   });
 
@@ -228,6 +245,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [files]);
 
   useEffect(() => {
+    localStorage.setItem('snapkeep_folders', JSON.stringify(folders));
+  }, [folders]);
+
+  useEffect(() => {
     localStorage.setItem('snapkeep_reminders', JSON.stringify(reminders));
   }, [reminders]);
 
@@ -264,6 +285,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const removeFile = (id: string) => {
     setFiles(prev => prev.filter(f => f.id !== id));
     setReminders(prev => prev.filter(r => r.fileId !== id));
+  };
+
+  const addFolder = (folder: Omit<Folder, 'id' | 'createdAt'>) => {
+    const newFolder: Folder = {
+      ...folder,
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+    };
+    setFolders(prev => [...prev, newFolder]);
+  };
+
+  const updateFolder = (id: string, updates: Partial<Folder>) => {
+    setFolders(prev => prev.map(f => 
+      f.id === id ? { ...f, ...updates } : f
+    ));
+  };
+
+  const removeFolder = (id: string) => {
+    setFolders(prev => prev.filter(f => f.id !== id));
+    // Remove folder reference from files
+    setFiles(prev => prev.map(f => 
+      f.folderId === id ? { ...f, folderId: undefined } : f
+    ));
   };
 
   const addReminder = (reminder: Reminder) => {
@@ -429,6 +473,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       value={{
         settings,
         files,
+        folders,
         reminders,
         timeline,
         chatMessages,
@@ -439,6 +484,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         addFile,
         updateFile,
         removeFile,
+        addFolder,
+        updateFolder,
+        removeFolder,
         addReminder,
         updateReminder,
         removeReminder,
