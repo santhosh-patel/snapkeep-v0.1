@@ -13,6 +13,8 @@ type FileCategory = 'image' | 'screenshot' | 'pdf' | 'document' | 'other';
 type SortField = 'name' | 'size' | 'date' | 'type';
 type SortOrder = 'asc' | 'desc';
 
+const allCategories: FileCategory[] = ['image', 'screenshot', 'pdf', 'document', 'other'];
+
 const categoryConfig: Record<FileCategory, { label: string; icon: React.ElementType; color: string }> = {
   image: { label: 'Images', icon: Image, color: 'text-blue-500 bg-blue-500/10' },
   screenshot: { label: 'Screenshots', icon: Camera, color: 'text-purple-500 bg-purple-500/10' },
@@ -48,6 +50,8 @@ export default function Browse() {
   const [selectedFolderId, setSelectedFolderId] = useState<string | undefined>(undefined);
   const [sortField, setSortField] = useState<SortField>('date');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+  const [selectedCategories, setSelectedCategories] = useState<Set<FileCategory>>(new Set(allCategories));
+  const [showCategoryFilter, setShowCategoryFilter] = useState(false);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
 
   const filteredFiles = useMemo(() => {
@@ -56,6 +60,11 @@ export default function Browse() {
     // Filter by folder
     if (selectedFolderId) {
       result = result.filter(f => f.folderId === selectedFolderId);
+    }
+    
+    // Filter by selected categories
+    if (selectedCategories.size < allCategories.length) {
+      result = result.filter(f => selectedCategories.has(f.type as FileCategory));
     }
     
     // Apply sorting
@@ -77,7 +86,23 @@ export default function Browse() {
       }
       return sortOrder === 'asc' ? comparison : -comparison;
     });
-  }, [searchQuery, files, naturalLanguageSearch, sortField, sortOrder, selectedFolderId]);
+  }, [searchQuery, files, naturalLanguageSearch, sortField, sortOrder, selectedFolderId, selectedCategories]);
+
+  const toggleCategoryFilter = (category: FileCategory) => {
+    setSelectedCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(category)) {
+        if (next.size > 1) next.delete(category);
+      } else {
+        next.add(category);
+      }
+      return next;
+    });
+  };
+
+  const selectAllCategories = () => {
+    setSelectedCategories(new Set(allCategories));
+  };
 
   const groupedFiles = filteredFiles.reduce((acc, file) => {
     const category = file.type as FileCategory;
@@ -318,8 +343,18 @@ export default function Browse() {
               </p>
             )}
 
-            {/* Folder Filter */}
+            {/* Category Filter */}
             <div className="flex items-center gap-2 mt-3 overflow-x-auto pb-1 scrollbar-hide">
+              <button
+                onClick={() => setShowCategoryFilter(!showCategoryFilter)}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors touch-feedback",
+                  selectedCategories.size < allCategories.length ? "bg-primary text-primary-foreground" : "bg-secondary"
+                )}
+              >
+                <Settings2 className="w-4 h-4" />
+                {selectedCategories.size === allCategories.length ? 'All Types' : `${selectedCategories.size} Types`}
+              </button>
               <button
                 onClick={() => setSelectedFolderId(undefined)}
                 className={cn(
@@ -327,7 +362,7 @@ export default function Browse() {
                   !selectedFolderId ? "bg-primary text-primary-foreground" : "bg-secondary"
                 )}
               >
-                All Files
+                All Folders
               </button>
               {folders.map((folder) => (
                 <button
@@ -349,6 +384,44 @@ export default function Browse() {
                 <FolderPlus className="w-4 h-4" />
               </button>
             </div>
+
+            {/* Category Filter Dropdown */}
+            {showCategoryFilter && (
+              <div className="mt-2 p-3 rounded-xl bg-card border border-border shadow-lg animate-fade-in">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium">Filter by Type</span>
+                  <button
+                    onClick={selectAllCategories}
+                    className="text-xs text-primary font-medium"
+                  >
+                    Select All
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {allCategories.map((cat) => {
+                    const config = categoryConfig[cat];
+                    const Icon = config.icon;
+                    const isSelected = selectedCategories.has(cat);
+                    return (
+                      <button
+                        key={cat}
+                        onClick={() => toggleCategoryFilter(cat)}
+                        className={cn(
+                          "flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors touch-feedback border-2",
+                          isSelected ? "bg-primary/10 border-primary" : "bg-secondary border-transparent"
+                        )}
+                      >
+                        <div className={cn("w-5 h-5 rounded flex items-center justify-center", config.color)}>
+                          <Icon className="w-3 h-3" />
+                        </div>
+                        {config.label}
+                        {isSelected && <CheckCircle2 className="w-4 h-4 text-primary" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -519,7 +592,7 @@ export default function Browse() {
 
                           {/* Three Dot Menu */}
                           {!isSelectionMode && (
-                            <div className="relative">
+                            <>
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -531,34 +604,51 @@ export default function Browse() {
                               </button>
 
                               {activeMenu === file.id && (
-                                <div
-                                  className="absolute right-0 top-10 bg-card rounded-xl shadow-lg border border-border py-2 min-w-[140px] z-50 animate-scale-in"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <button
-                                    onClick={() => handleMenuAction('share', file.id)}
-                                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-secondary transition-colors"
+                                <>
+                                  <div
+                                    className="fixed inset-0 z-[70]"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setActiveMenu(null);
+                                    }}
+                                  />
+                                  <div
+                                    className="fixed right-4 bg-card rounded-xl shadow-xl border border-border py-2 min-w-[160px] z-[80] animate-scale-in"
+                                    style={{ top: 'auto', bottom: '120px' }}
+                                    onClick={(e) => e.stopPropagation()}
                                   >
-                                    <Share2 className="w-4 h-4" />
-                                    <span className="text-sm">Share</span>
-                                  </button>
-                                  <button
-                                    onClick={() => handleMenuAction('move', file.id)}
-                                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-secondary transition-colors"
-                                  >
-                                    <FolderInput className="w-4 h-4" />
-                                    <span className="text-sm">Move</span>
-                                  </button>
-                                  <button
-                                    onClick={() => handleMenuAction('delete', file.id)}
-                                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-destructive/10 transition-colors text-destructive"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                    <span className="text-sm">Delete</span>
-                                  </button>
-                                </div>
+                                    <button
+                                      onClick={() => handleMenuAction('share', file.id)}
+                                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-secondary transition-colors"
+                                    >
+                                      <Share2 className="w-4 h-4" />
+                                      <span className="text-sm font-medium">Share</span>
+                                    </button>
+                                    <button
+                                      onClick={() => handleMenuAction('folder', file.id)}
+                                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-secondary transition-colors"
+                                    >
+                                      <Folder className="w-4 h-4" />
+                                      <span className="text-sm font-medium">Move to Folder</span>
+                                    </button>
+                                    <button
+                                      onClick={() => handleMenuAction('move', file.id)}
+                                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-secondary transition-colors"
+                                    >
+                                      <FolderInput className="w-4 h-4" />
+                                      <span className="text-sm font-medium">Change Category</span>
+                                    </button>
+                                    <button
+                                      onClick={() => handleMenuAction('delete', file.id)}
+                                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-destructive/10 transition-colors text-destructive"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                      <span className="text-sm font-medium">Delete</span>
+                                    </button>
+                                  </div>
+                                </>
                               )}
-                            </div>
+                            </>
                           )}
                         </div>
                       );
