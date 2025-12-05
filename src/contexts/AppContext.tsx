@@ -80,6 +80,27 @@ export interface Folder {
   name: string;
   color: string;
   createdAt: string;
+  isSystem?: boolean; // For auto-created folders
+}
+
+export type BillStatus = 'pending' | 'paid' | 'overdue';
+export type BillType = 'electricity' | 'water' | 'gas' | 'internet' | 'phone' | 'rent' | 'emi' | 'insurance' | 'subscription' | 'other';
+
+export interface Bill {
+  id: string;
+  name: string;
+  type: BillType;
+  amount: number;
+  dueDate: string;
+  status: BillStatus;
+  isPaid: boolean;
+  paidDate?: string;
+  isRecurring: boolean;
+  recurringDay?: number; // Day of month for recurring bills
+  attachedFileIds: string[];
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface PendingAction {
@@ -101,6 +122,7 @@ interface AppContextType {
   settings: AppSettings;
   files: StoredFile[];
   folders: Folder[];
+  bills: Bill[];
   reminders: Reminder[];
   timeline: TimelineEvent[];
   chatMessages: ChatMessage[];
@@ -114,6 +136,10 @@ interface AppContextType {
   addFolder: (folder: Omit<Folder, 'id' | 'createdAt'>) => void;
   updateFolder: (id: string, updates: Partial<Folder>) => void;
   removeFolder: (id: string) => void;
+  addBill: (bill: Omit<Bill, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  updateBill: (id: string, updates: Partial<Bill>) => void;
+  removeBill: (id: string) => void;
+  markBillPaid: (id: string) => void;
   addReminder: (reminder: Reminder) => void;
   updateReminder: (id: string, updates: Partial<Reminder>) => void;
   removeReminder: (id: string) => void;
@@ -128,6 +154,8 @@ interface AppContextType {
   lockApp: () => void;
   searchFiles: (query: string) => StoredFile[];
   naturalLanguageSearch: (query: string) => StoredFile[];
+  initializeSystemFolders: () => void;
+  exportData: () => string;
 }
 
 const defaultSettings: AppSettings = {
@@ -162,6 +190,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const [folders, setFolders] = useState<Folder[]>(() => {
     const stored = localStorage.getItem('snapkeep_folders');
+    return stored ? JSON.parse(stored) : [];
+  });
+
+  const [bills, setBills] = useState<Bill[]>(() => {
+    const stored = localStorage.getItem('snapkeep_bills');
     return stored ? JSON.parse(stored) : [];
   });
 
@@ -249,6 +282,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [folders]);
 
   useEffect(() => {
+    localStorage.setItem('snapkeep_bills', JSON.stringify(bills));
+  }, [bills]);
+
+  useEffect(() => {
     localStorage.setItem('snapkeep_reminders', JSON.stringify(reminders));
   }, [reminders]);
 
@@ -303,10 +340,67 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const removeFolder = (id: string) => {
+    // Don't allow removing system folders
+    const folder = folders.find(f => f.id === id);
+    if (folder?.isSystem) return;
     setFolders(prev => prev.filter(f => f.id !== id));
     // Remove folder reference from files
     setFiles(prev => prev.map(f => 
       f.folderId === id ? { ...f, folderId: undefined } : f
+    ));
+  };
+
+  // System folders initialization
+  const systemFolders = [
+    { name: 'Bills', color: '#ef4444', isSystem: true },
+    { name: 'IDs', color: '#3b82f6', isSystem: true },
+    { name: 'Warranty', color: '#22c55e', isSystem: true },
+    { name: 'Receipts', color: '#f59e0b', isSystem: true },
+  ];
+
+  const initializeSystemFolders = useCallback(() => {
+    const existingNames = folders.map(f => f.name);
+    const foldersToAdd = systemFolders.filter(sf => !existingNames.includes(sf.name));
+    if (foldersToAdd.length > 0) {
+      const newFolders = foldersToAdd.map(f => ({
+        ...f,
+        id: crypto.randomUUID(),
+        createdAt: new Date().toISOString(),
+      }));
+      setFolders(prev => [...newFolders, ...prev]);
+    }
+  }, [folders]);
+
+  // Bill functions
+  const addBill = (bill: Omit<Bill, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const newBill: Bill = {
+      ...bill,
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    setBills(prev => [newBill, ...prev]);
+  };
+
+  const updateBill = (id: string, updates: Partial<Bill>) => {
+    setBills(prev => prev.map(b => 
+      b.id === id ? { ...b, ...updates, updatedAt: new Date().toISOString() } : b
+    ));
+  };
+
+  const removeBill = (id: string) => {
+    setBills(prev => prev.filter(b => b.id !== id));
+  };
+
+  const markBillPaid = (id: string) => {
+    setBills(prev => prev.map(b => 
+      b.id === id ? { 
+        ...b, 
+        isPaid: true, 
+        status: 'paid' as BillStatus, 
+        paidDate: new Date().toISOString(),
+        updatedAt: new Date().toISOString() 
+      } : b
     ));
   };
 
@@ -468,12 +562,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return results;
   };
 
+  // Export all data as JSON
+  const exportData = useCallback(() => {
+    const data = {
+      exportDate: new Date().toISOString(),
+      files,
+      folders,
+      bills,
+      reminders,
+      timeline,
+    };
+    return JSON.stringify(data, null, 2);
+  }, [files, folders, bills, reminders, timeline]);
+
   return (
     <AppContext.Provider
       value={{
         settings,
         files,
         folders,
+        bills,
         reminders,
         timeline,
         chatMessages,
@@ -487,6 +595,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         addFolder,
         updateFolder,
         removeFolder,
+        addBill,
+        updateBill,
+        removeBill,
+        markBillPaid,
         addReminder,
         updateReminder,
         removeReminder,
@@ -500,6 +612,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         unlockApp,
         lockApp,
         searchFiles,
+        initializeSystemFolders,
+        exportData,
         naturalLanguageSearch,
       }}
     >
